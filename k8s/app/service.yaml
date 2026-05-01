@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-web-app-service
+  namespace: smart-traffic
+  labels:
+    app: test-web-app
+spec:
+  type: ClusterIP
+  selector:
+    app: test-web-app
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000
