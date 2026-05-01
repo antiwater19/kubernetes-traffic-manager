@@ -54,3 +54,16 @@ smart-traffic-system/
 └── README.md
 ```
 
+## app-testing의 docker image 만들기 
+```bash
+cd app
+docker build -t test-web-app:latest .
+```
+
+## k8s에 배포하기
+```bash
+kubectl apply -f k8s/namespace.yaml
+kubectl apply -f k8s/app/deployment.yaml
+kubectl apply -f k8s/app/service.yaml
+```
+### 이후에 계속 추가 예정
