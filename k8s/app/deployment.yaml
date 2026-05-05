@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-web-app
+  namespace: smart-traffic
+  labels:
+    app: test-web-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: test-web-app
+  template:
+    metadata:
+      labels:
+        app: test-web-app
+    spec:
+      containers:
+        - name: test-web-app
+          image: test-web-app:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
