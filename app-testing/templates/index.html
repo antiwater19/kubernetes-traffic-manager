@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>Smart Traffic Test App</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="card">
+        <h1>Smart Traffic Test App</h1>
+        <p class="status">NGINX Ingress 접속 성공</p>
+
+        <div class="info">
+            <p><b>Client IP:</b> {{ client_ip }}</p>
+            <p><b>Request Count:</b> {{ request_count }}</p>
+            <p><b>Server Time:</b> {{ server_time }}</p>
+        </div>
+
+        <hr>
+
+        <h2>Test API</h2>
+        <div class="links">
+            <a href="/api">/api 기본 JSON</a>
+            <a href="/slow">/slow 지연 응답</a>
+            <a href="/error">/error 랜덤 에러</a>
+            <a href="/burst">/burst 부하 테스트</a>
+            <a href="/stats">/stats 통계</a>
+        </div>
+    </div>
+</body>
+</html>

@@ -62,8 +62,19 @@ docker build -t test-web-app:latest .
 
 ## k8s에 배포하기
 ```bash
+# 위에서 부터 차례로 명령어 치면 됩니다.
 kubectl apply -f k8s/namespace.yaml
-kubectl apply -f k8s/app/deployment.yaml
+# service 배포
 kubectl apply -f k8s/app/service.yaml
+# deployment 배포 하기전에 dockerhub 로그인 필요
+kubectl apply -f k8s/app/deployment.yaml
+# ingress 배포
+kubectl apply -f k8s/ingress/ingress.yaml
 ```
+
+### nginx ingress controller 설치
+```bash
+kubectl apply -f k8s/ingress-controller/nginx-ingress-controller.yaml
+```
+
 ### 이후에 계속 추가 예정

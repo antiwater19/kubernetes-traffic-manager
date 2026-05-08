@@ -17,8 +17,8 @@ spec:
     spec:
       containers:
         - name: test-web-app
-          image: test-web-app:latest
-          imagePullPolicy: IfNotPresent
+          image: antiwater19/test-web-app:v6
+          imagePullPolicy: Always
           ports:
             - containerPort: 8000
           resources:
