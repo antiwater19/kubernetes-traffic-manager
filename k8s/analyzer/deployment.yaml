@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: traffic-analyzer
+  namespace: smart-traffic
+  labels:
+    app: traffic-analyzer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: traffic-analyzer
+  template:
+    metadata:
+      labels:
+        app: traffic-analyzer
+    spec:
+      containers:
+        - name: traffic-analyzer
+          image: antiwater19/traffic-analyzer:v1
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 9000
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
