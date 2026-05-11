@@ -89,4 +89,51 @@ kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main
 ```
 nginx ingress controller 설치 되어야 ingress가 제대로 동작합니다.
 
+---
+
+### 테스팅용 포트포워딩
+```bash
+# app 서비스 포트포워딩
+kubectl port-forward svc/app-service 8080:80 -n <namespace>
+
+# analyzer 서비스 포트포워딩
+kubectl port-forward -n smart-traffic svc/traffic-analyzer-service 9000:9000
+```
+
+## API 명세서
+### App
+/api 기본 JSON 요청
+```bash
+curl http://test.local/api
+```
+/slow 지연 응답
+```bash
+curl http://test.local/slow
+```
+/error 에러 응답
+```bash
+curl http://test.local/error
+```
+/burst 부하 테스트용 응답
+```bash
+curl http://test.local/burst
+```
+/stats 통계 정보
+```bash
+curl http://test.local/stats
+```
+
+### analyzer
+요청 카운트 세는거
+```bash
+curl http://localhost:9000/analyze
+```
+
+---
+
+## 기타 
+탐지 결과 확인용 로그 보기
+```bash
+kubectl logs -n smart-traffic -l app=traffic-analyzer -f
+```
 ### 이후에 계속 추가 예정
