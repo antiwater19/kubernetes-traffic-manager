@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: traffic-analyzer-sa
+  namespace: smart-traffic
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: traffic-analyzer-networkpolicy-role
+  namespace: smart-traffic
+rules:
+  - apiGroups:
+      - networking.k8s.io
+    resources:
+      - networkpolicies
+    verbs:
+      - get
+      - list
+      - create
+      - update
+      - patch
+      - delete
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: traffic-analyzer-networkpolicy-rolebinding
+  namespace: smart-traffic
+subjects:
+  - kind: ServiceAccount
+    name: traffic-analyzer-sa
+    namespace: smart-traffic
+roleRef:
+  kind: Role
+  name: traffic-analyzer-networkpolicy-role
+  apiGroup: rbac.authorization.k8s.io

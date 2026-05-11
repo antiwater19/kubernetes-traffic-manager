@@ -136,4 +136,25 @@ curl http://localhost:9000/analyze
 ```bash
 kubectl logs -n smart-traffic -l app=traffic-analyzer -f
 ```
+
+### 새로 개조해서 Docker 이미지 만들기
+
+```bash
+cd analyzer
+# Docker 이미지 빌드
+docker build -t traffic-analyzer:latest .
+# Docker Hub에 태그 달기
+docker tag traffic-analyzer:latest <dockerhub-username>/traffic-analyzer:latest
+# Docker Hub에 푸시
+docker push <dockerhub-username>/traffic-analyzer:latest
+```
+```bash
+cd app
+docker build -t test-web-app:latest .
+
+docker tag test-web-app:latest <dockerhub-username>/test-web-app:latest
+
+docker push <dockerhub-username>/test-web-app:latest
+```
+
 ### 이후에 계속 추가 예정
