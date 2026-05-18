@@ -8,10 +8,10 @@ INGRESS_NAMESPACE = "ingress-nginx"
 
 
 def load_k8s_config():
-    """
-    Kubernetes 클러스터 내부에서 실행될 때는 incluster config 사용.
-    로컬 테스트 시에는 kubeconfig 사용.
-    """
+
+    # Kubernetes 클러스터 내부에서 실행될 때는 incluster config 사용.
+    # 로컬 테스트 시에는 kubeconfig 사용.
+    
     try:
         config.load_incluster_config()
         logging.info("[BLOCKER] Loaded in-cluster Kubernetes config")
@@ -21,9 +21,7 @@ def load_k8s_config():
 
 
 def create_or_update_network_policy():
-    """
-    test-web-app Pod에 대해 nginx-ingress namespace에서 오는 트래픽만 허용하는 NetworkPolicy 생성/수정
-    """
+    # test-web-app Pod에 대해 nginx-ingress namespace에서 오는 트래픽만 허용하는 NetworkPolicy 생성/수정
     load_k8s_config()
 
     api = client.NetworkingV1Api()
