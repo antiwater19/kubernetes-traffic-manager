@@ -15,9 +15,10 @@ spec:
       labels:
         app: traffic-analyzer
     spec:
+      serviceAccountName: traffic-analyzer-sa
       containers:
         - name: traffic-analyzer
-          image: antiwater19/traffic-analyzer:v1
+          image: antiwater19/traffic-analyzer:v2
           imagePullPolicy: Always
           ports:
             - containerPort: 9000
