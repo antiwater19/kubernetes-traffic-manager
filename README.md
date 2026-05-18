@@ -72,6 +72,10 @@ kubectl apply -f k8s/app/service.yaml
 kubectl apply -f k8s/app/deployment.yaml
 # ingress 배포
 kubectl apply -f k8s/ingress/ingress.yaml
+# analyzer 서비스 배포
+kubectl apply -f k8s/analyzer/rbac.yaml
+kubectl apply -f k8s/analyzer/deployment.yaml
+kubectl apply -f k8s/analyzer/service.yaml
 ```
 
 ### deployment 재배포 
