@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 import requests
+import logging
 
 from detector import detect_abnormal_traffic
 from blocker import create_or_update_network_policy
@@ -42,7 +43,11 @@ async def analyze():
     block_result = None
 
     if abnormal_result:
+        logging.warning(f"[ANALYZER] Abnormal traffic detected: {abnormal_result}")
+
         block_result = create_or_update_network_policy()
+
+        logging.warning(f"[ANALYZER] NetworkPolicy applied: {block_result}")
 
     return {
         "stats": stats_data,
@@ -52,8 +57,6 @@ async def analyze():
 
 @app.get("/apply-policy")
 async def apply_policy():
-    """
-    테스트용: 이상 탐지와 상관없이 NetworkPolicy 적용
-    """
+    # 테스트용: 이상 탐지와 상관없이 NetworkPolicy 적용
     result = create_or_update_network_policy()
     return result

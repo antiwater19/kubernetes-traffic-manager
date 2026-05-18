@@ -61,8 +61,25 @@ docker build -t test-web-app:latest .
 ```
 
 ## k8s에 배포하기
+### 배포전 도커허브 로그인
+```bash
+# 도커허브 로그인 (이미 로그인 되어 있으면 패스)
+docker login
+```
+dockerhub에 로그인이 되어있지 않으면 배포시 이미지 풀링이 안되서 배포가 실패할 수 있습니다. 로그인 후 다시 배포해보세요.
 
-### 차례로 배포하기
+### 배포전 nginx ingress controller 설치
+```bash
+# 이거는 사실 올려져 있는걸 그대로 다운로드 해서 파일을 만들어둔거라 그냥 배포하기만 하면 됩니다.
+kubectl apply -f k8s/ingress-controller/nginx-ingress-controller.yaml
+
+# nginx ingress controller 설치 (공식 매니페스트)(요거랑 위에거 둘중 하나만 하면 됩니다.)
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/cloud/deploy.yaml
+```
+nginx ingress controller 설치 되어야 ingress가 제대로 동작합니다.
+---
+
+### 본격적으로 차례로 배포하기
 ```bash
 # 위에서 부터 차례로 명령어 치면 됩니다.
 kubectl apply -f k8s/namespace.yaml
@@ -70,8 +87,13 @@ kubectl apply -f k8s/namespace.yaml
 kubectl apply -f k8s/app/service.yaml
 # deployment 배포 (배포시 이미지에 문제 생기면 도커허브 로그인 후 다시 배포)
 kubectl apply -f k8s/app/deployment.yaml
+
 # ingress 배포
 kubectl apply -f k8s/ingress/ingress.yaml
+
+# security 배포
+kubectl apply -f k8s/security/network-policy.yaml
+
 # analyzer 서비스 배포
 kubectl apply -f k8s/analyzer/rbac.yaml
 kubectl apply -f k8s/analyzer/deployment.yaml
@@ -82,16 +104,6 @@ kubectl apply -f k8s/analyzer/service.yaml
 ```bash
 kubectl rollout restart deployment <deployment-name> -n <namespace>
 ```
-
-### nginx ingress controller 설치
-```bash
-# 이거는 사실 올려져 있는걸 그대로 다운로드 해서 파일을 만들어둔거라 그냥 배포하기만 하면 됩니다.
-kubectl apply -f k8s/ingress-controller/nginx-ingress-controller.yaml
-
-# nginx ingress controller 설치 (공식 매니페스트)(요거랑 위에거 둘중 하나만 하면 됩니다.)
-kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/cloud/deploy.yaml
-```
-nginx ingress controller 설치 되어야 ingress가 제대로 동작합니다.
 
 ---
 
