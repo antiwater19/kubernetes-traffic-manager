@@ -1,0 +1,2 @@
+명령어
+kubectl apply -f k8s/k6/k6.yaml
