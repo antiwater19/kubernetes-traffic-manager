@@ -56,9 +56,13 @@ smart-traffic-system/
 
 ## app-testing의 docker image 만들기 
 ```bash
-cd app
-docker build -t test-web-app:latest .
+docker build -t test-web-app:dev ./app-testing
 ```
+
+테스트 웹앱은 모든 요청의 시각, 클라이언트 IP, HTTP 메서드, 경로, 응답 코드,
+처리 시간, User-Agent를 PostgreSQL의 `request_logs` 테이블에 저장합니다.
+DB 데이터는 `traffic-db-data` PVC에 보관되어 DB Pod가 재시작되어도 유지됩니다.
+현재 개발용 DB 비밀번호는 Kubernetes 매니페스트에 들어 있으므로 실제 서비스에는 사용하지 마세요.
 
 ## k8s에 배포하기
 ### 배포전 도커허브 로그인
@@ -83,10 +87,15 @@ nginx ingress controller 설치 되어야 ingress가 제대로 동작합니다.
 ```bash
 # 위에서 부터 차례로 명령어 치면 됩니다.
 kubectl apply -f k8s/namespace.yaml
+# 트래픽 기록 저장용 PostgreSQL과 영구 볼륨
+kubectl apply -f k8s/app/database.yaml
+# DB가 준비될 때까지 확인
+kubectl rollout status deployment/traffic-db -n smart-traffic
 # service 배포
 kubectl apply -f k8s/app/service.yaml
 # deployment 배포 (배포시 이미지에 문제 생기면 도커허브 로그인 후 다시 배포)
 kubectl apply -f k8s/app/deployment.yaml
+kubectl rollout status deployment/test-web-app -n smart-traffic
 
 # ingress 배포
 kubectl apply -f k8s/ingress/ingress.yaml
@@ -98,6 +107,15 @@ kubectl apply -f k8s/security/network-policy.yaml
 kubectl apply -f k8s/analyzer/rbac.yaml
 kubectl apply -f k8s/analyzer/deployment.yaml
 kubectl apply -f k8s/analyzer/service.yaml
+```
+
+### 트래픽 로그 확인
+```bash
+# 앱 통계 API: IP별로 DB에 저장된 요청 수
+curl http://test.local/stats
+
+# 개별 트래픽 로그와 DB 연결 오류 로그
+kubectl logs -n smart-traffic -l app=test-web-app --prefix=true
 ```
 
 ### deployment 재배포 

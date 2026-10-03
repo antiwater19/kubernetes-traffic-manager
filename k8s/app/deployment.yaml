@@ -17,10 +17,16 @@ spec:
     spec:
       containers:
         - name: test-web-app
-          image: antiwater19/test-web-app:v6
-          imagePullPolicy: Always
+          image: test-web-app:dev
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: traffic-db-secret
+                  key: DATABASE_URL
           resources:
             requests:
               cpu: "100m"

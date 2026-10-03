@@ -2,14 +2,55 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import func, select
+from sqlalchemy.exc import SQLAlchemyError
 
 from datetime import datetime
 import logging
 import time
 import random
+from database import RequestLog, SessionLocal, init_db
 
 # FastAPI 애플리케이션 생성
 app = FastAPI()
+
+
+@app.on_event("startup")
+def startup():
+    init_db()
+
+
+@app.middleware("http")
+async def record_traffic(request: Request, call_next):
+    started_at = time.perf_counter()
+    status_code = 500
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+        return response
+    finally:
+        forwarded_for = request.headers.get("x-forwarded-for", "")
+        client_ip = forwarded_for.split(",", 1)[0].strip() or (
+            request.client.host if request.client else "unknown"
+        )
+        latency_ms = round((time.perf_counter() - started_at) * 1000, 2)
+        try:
+            with SessionLocal() as session:
+                session.add(RequestLog(
+                    client_ip=client_ip,
+                    method=request.method,
+                    path=request.url.path,
+                    status_code=status_code,
+                    latency_ms=latency_ms,
+                    user_agent=request.headers.get("user-agent", "")[:512],
+                ))
+                session.commit()
+            logging.info(
+                "[TRAFFIC] IP=%s METHOD=%s PATH=%s STATUS=%s LATENCY_MS=%s",
+                client_ip, request.method, request.url.path, status_code, latency_ms,
+            )
+        except SQLAlchemyError:
+            logging.exception("[TRAFFIC] Failed to persist request log")
 
 
 # -----------------------------------
@@ -178,7 +219,12 @@ async def burst(request: Request):
 # ==========================================================
 @app.get("/stats")
 async def stats():
-    return {
-        "total_clients": len(request_count),
-        "requests": request_count
-    }
+    with SessionLocal() as session:
+        total_clients = session.scalar(
+            select(func.count(func.distinct(RequestLog.client_ip)))
+        ) or 0
+        rows = session.execute(
+            select(RequestLog.client_ip, func.count(RequestLog.id))
+            .group_by(RequestLog.client_ip)
+        ).all()
+    return {"total_clients": total_clients, "requests": dict(rows)}
