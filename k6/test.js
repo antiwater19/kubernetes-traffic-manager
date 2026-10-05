@@ -2,15 +2,19 @@ import http from 'k6/http';
 import { sleep } from 'k6';
 
 export const options = {
-    vus: 10,
-    duration: '30s',
+  vus: 5,
+  duration: '30s',
 };
 
+const BASE_URL = __ENV.TARGET_URL ||
+  'http://ingress-nginx-controller.ingress-nginx.svc.cluster.local';
+const PATHS = ['/api', '/api', '/api', '/slow', '/burst', '/error'];
+
 export default function () {
-    http.get('http://YOUR-SERVICE-URL/');
-    sleep(0.1);
+  const path = PATHS[Math.floor(Math.random() * PATHS.length)];
+  http.get(`${BASE_URL}${path}`, {
+    headers: { Host: 'test.local' },
+    tags: { endpoint: path },
+  });
+  sleep(0.25);
 }
-
-
-// 실행 할때는 bash에 k6 run k6/test.js 을 입력
-// 이거는 외부에서 사용하는 k6로 트래픽을 발생시키는 테스트 코드임.

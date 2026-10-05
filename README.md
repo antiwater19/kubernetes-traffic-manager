@@ -118,6 +118,22 @@ curl http://test.local/stats
 kubectl logs -n smart-traffic -l app=test-web-app --prefix=true
 ```
 
+### k6 부하 테스트
+Kubernetes 안에서 5명의 가상 사용자가 30초 동안 Ingress를 거쳐 요청합니다.
+`/api`, `/slow`, `/burst`, `/error` 경로를 섞어서 호출하며 결과는 PostgreSQL에 저장됩니다.
+테스트 Job은 완료 1시간 후 자동으로 정리됩니다.
+```bash
+kubectl apply -f k8s/k6/k6.yaml
+kubectl wait --for=condition=complete job/k6-test -n smart-traffic --timeout=120s
+kubectl logs -n smart-traffic job/k6-test
+```
+
+완료되기 전에 다시 실행하려면 이전 Job을 지운 뒤 다시 적용합니다.
+```bash
+kubectl delete job k6-test -n smart-traffic
+kubectl apply -f k8s/k6/k6.yaml
+```
+
 ### deployment 재배포 
 ```bash
 kubectl rollout restart deployment <deployment-name> -n <namespace>
