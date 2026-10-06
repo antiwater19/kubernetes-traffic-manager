@@ -18,10 +18,16 @@ spec:
       serviceAccountName: traffic-analyzer-sa
       containers:
         - name: traffic-analyzer
-          image: antiwater19/traffic-analyzer:v2
-          imagePullPolicy: Always
+          image: traffic-analyzer:dev
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 9000
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: traffic-db-secret
+                  key: DATABASE_URL
           resources:
             requests:
               cpu: "100m"
