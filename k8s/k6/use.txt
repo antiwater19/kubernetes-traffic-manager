@@ -1,2 +1,19 @@
-명령어
+프로필 선택 예시 (프로젝트 루트 PowerShell에서 실행)
+
+1) k6 스크립트 ConfigMap 갱신
+kubectl create configmap k6-script --from-file=test.js=k6/test.js -n smart-traffic --dry-run=client -o yaml | kubectl apply -f -
+
+2) 실행 프로필 지정 (normal, burst, slow, error, all)
+kubectl create configmap k6-run-profile --from-literal=RUN_PROFILE=normal -n smart-traffic --dry-run=client -o yaml | kubectl apply -f -
+
+3) 이전 Job이 있으면 지우고 실행
+kubectl delete job k6-test -n smart-traffic --ignore-not-found
 kubectl apply -f k8s/k6/k6.yaml
+
+4) 완료 및 로그 확인
+kubectl wait --for=condition=complete job/k6-test -n smart-traffic --timeout=25m
+kubectl logs -n smart-traffic job/k6-test
+
+normal 프로필은 Isolation Forest 기준선을 모으기 위해 21분간 실행됩니다.
+각 Job은 종료 후 analyzer를 자동 호출해 결과를 DB에 저장합니다.
+시나리오 결과를 분리해서 비교하려면 다음 프로필 전 60초 이상 기다립니다.

@@ -38,6 +38,7 @@ class RequestLog(Base):
     status_code: Mapped[int] = mapped_column(Integer)
     latency_ms: Mapped[float] = mapped_column(Float)
     user_agent: Mapped[str] = mapped_column(String(512))
+    scenario: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[object] = mapped_column(DateTime(timezone=True))
 
 

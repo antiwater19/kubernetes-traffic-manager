@@ -10,13 +10,13 @@ from sqlalchemy.orm import Session
 from database import RequestLog
 
 
-DETECTOR_NAME = "windowed-rules+isolation-forest-v1"
+DETECTOR_NAME = "windowed-rules+isolation-forest-v2"
 REQUEST_COUNT_THRESHOLD = 20
 ERROR_RATE_THRESHOLD = 0.5
 MIN_ERRORS_FOR_RATE_ALERT = 3
 SLOW_AVERAGE_MS_THRESHOLD = 1000.0
 MIN_REQUESTS_FOR_LATENCY_ALERT = 3
-BASELINE_DAYS = 7
+BASELINE_DAYS = 1
 MIN_TRAINING_SAMPLES = 20
 CONTAMINATION = 0.05
 FEATURE_NAMES = [
@@ -26,7 +26,7 @@ FEATURE_NAMES = [
     "p95_latency_ms",
     "unique_paths",
 ]
-_MODEL_CACHE = {"checked_at": 0.0, "model": None, "training_samples": 0}
+_MODEL_CACHE = {"checked_at": 0.0, "training_features": None, "training_samples": 0}
 
 
 def _feature_row(row) -> list[float]:
@@ -48,7 +48,7 @@ def _run_isolation_forest(session: Session, window_started_at: datetime, window_
         func.sum(case((RequestLog.status_code >= 400, 1), else_=0)), 0
     )
 
-    cache_ttl = 300 if _MODEL_CACHE["model"] is not None else 60
+    cache_ttl = 300 if _MODEL_CACHE["training_features"] is not None else 60
     if time.monotonic() - _MODEL_CACHE["checked_at"] >= cache_ttl:
         baseline_rows = session.execute(
             select(
@@ -65,22 +65,19 @@ def _run_isolation_forest(session: Session, window_started_at: datetime, window_
             .where(
                 RequestLog.created_at >= window_started_at - timedelta(days=BASELINE_DAYS),
                 RequestLog.created_at < window_started_at,
+                RequestLog.scenario == "normal",
             )
             .group_by(RequestLog.client_ip, minute_bucket)
             .order_by(minute_bucket.desc())
-            .limit(10000)
+            .limit(2000)
         ).all()
-        _MODEL_CACHE["model"] = None
         _MODEL_CACHE["training_samples"] = len(baseline_rows)
         if len(baseline_rows) >= MIN_TRAINING_SAMPLES:
-            model = IsolationForest(
-                n_estimators=150,
-                contamination=CONTAMINATION,
-                random_state=42,
-                n_jobs=1,
+            _MODEL_CACHE["training_features"] = np.asarray(
+                [_feature_row(row) for row in baseline_rows], dtype=float
             )
-            model.fit(np.asarray([_feature_row(row) for row in baseline_rows], dtype=float))
-            _MODEL_CACHE["model"] = model
+        else:
+            _MODEL_CACHE["training_features"] = None
         _MODEL_CACHE["checked_at"] = time.monotonic()
 
     score_started_at = max(window_started_at, window_ended_at - timedelta(seconds=60))
@@ -109,21 +106,35 @@ def _run_isolation_forest(session: Session, window_started_at: datetime, window_
         "minimum_training_samples": MIN_TRAINING_SAMPLES,
         "scored_clients": len(current_rows),
         "baseline_days": BASELINE_DAYS,
+        "baseline_scenarios": ["normal"],
         "scored_window_seconds": 60,
         "contamination": CONTAMINATION,
         "features": FEATURE_NAMES,
     }
     scored = {}
-    model = _MODEL_CACHE["model"]
-    if model is None or not current_rows:
+    training = _MODEL_CACHE["training_features"]
+    if training is None:
+        return scored, metadata
+
+    metadata["status"] = "ready"
+    metadata["anomalies"] = 0
+    if not current_rows:
         return scored, metadata
 
     current = np.asarray([_feature_row(row) for row in current_rows], dtype=float)
+    model = IsolationForest(
+        n_estimators=150,
+        contamination=CONTAMINATION,
+        random_state=42,
+        n_jobs=1,
+    )
+    # Include the current scoring batch so values outside the historical range
+    # can be isolated as outliers by the forest's random splits.
+    model.fit(np.vstack([training, current]))
+    metadata["decision_threshold"] = round(float(model.offset_), 6)
     predictions = model.predict(current)
     decision_scores = model.decision_function(current)
-    metadata["status"] = "ready"
     metadata["anomalies"] = int(np.count_nonzero(predictions == -1))
-    metadata["decision_threshold"] = round(float(model.offset_), 6)
     for row, prediction, score in zip(current_rows, predictions, decision_scores):
         scored[row.client_ip] = {
             "is_anomaly": bool(prediction == -1),
@@ -209,7 +220,9 @@ def analyze_recent_traffic(session: Session, window_seconds: int) -> dict:
             "average_latency_ms": 0.0,
         })
         timeline.append({
-            "timestamp": datetime.fromtimestamp(number * bucket_seconds, tz=timezone.utc),
+            "timestamp": datetime.fromtimestamp(
+                number * bucket_seconds, tz=timezone.utc
+            ).isoformat(),
             **bucket,
         })
 

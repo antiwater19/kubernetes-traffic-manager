@@ -134,23 +134,42 @@ curl "http://localhost:9000/analyses?limit=20"
 curl "http://localhost:9000/analyses/1"
 ```
 분석기는 규칙 탐지와 Isolation Forest를 함께 사용합니다. 규칙은 요청 수, 오류 비율,
-평균 응답 시간을 확인하고, Isolation Forest는 직전 7일의 IP별 60초 집계(요청 수,
-오류율, 평균/p95 응답 시간, 경로 수)를 기준선으로 최근 60초 패턴을 점수화합니다.
+평균 응답 시간을 확인하고, Isolation Forest는 직전 1일 동안 명시적으로 `normal`로 표시된
+IP별 60초 집계(요청 수, 오류율, 평균/p95 응답 시간, 경로 수)를 정상 기준선으로 삼습니다.
+매 분석 때 최근 60초 집계와 기준선을 함께 모델에 넣어 현재 배치의 이상 점수를 계산합니다.
 학습 기준이 20개 구간보다 적으면 모델 결과는 `insufficient_data`로 표시되고 규칙 탐지만 동작합니다.
 응답과 저장된 분석 결과의 `detector_metadata`에 모델 준비 상태와 학습 표본 수가 포함됩니다.
 첫 적용 뒤 새 기준선 표본을 모으려면 주기적으로 `/analyze`를 호출할 필요 없이 트래픽 로그를 쌓으면 됩니다.
 분석 요청은 NetworkPolicy를 자동 변경하지 않습니다.
 
-### k6 부하 테스트
-Kubernetes 안에서 아래 네 가지 시나리오가 Ingress를 거쳐 실행됩니다.
+### k6 트래픽 수집 및 이상 탐지 검증
+k6는 프로필별로 실행해 정상 기준선과 이상 시나리오를 분리합니다.
 
-- `normal`: `/api`에 정상 요청
+- `normal`: `/api`에 낮은 빈도의 정상 요청을 21분간 발생시켜 모델 기준선 수집
 - `burst`: 초당 8건의 `/burst` 요청
 - `slow`: 2초 지연되는 `/slow` 요청
 - `error`: `/error` 요청. 약 절반은 HTTP 500을 반환합니다.
+- `all`: 네 가지 시나리오를 짧게 함께 실행하는 전시 시연용 프로필
 
 각 요청의 `scenario` 값과 실제 HTTP 상태 코드가 PostgreSQL `request_logs`에 저장됩니다.
-시나리오별 요청·오류 수는 다음 SQL로 확인할 수 있습니다.
+프로젝트 루트의 PowerShell에서 아래처럼 프로필을 선택합니다. Isolation Forest의 기준선은
+과거 1일 중 k6가 명시적으로 `normal`로 표시한 요청의 IP별 분 단위 집계이며, 최소 20개 구간이 필요합니다.
+시나리오 미지정 로그와 알려진 `burst`, `slow`, `error` 실험 데이터는 기준선에서 제외합니다. 기준선 수집을 마친 뒤
+각 k6 Job은 실행 종료 직후 `/analyze`를 호출해 결과를 저장하고 모델 상태와 탐지 수를 로그에
+남깁니다. 이 방식으로 트래픽이 최근 60초 구간을 벗어나기 전에 분석 결과를 만들 수 있습니다.
+정상 기준선 수집을 마친 뒤 `burst`, `slow`, `error`를 각각 실행해 로그를 비교합니다.
+시나리오별 결과를 겹치지 않게 보려면 각 Job이 끝난 뒤 60초 이상 기다렸다가 다음 프로필을 실행합니다.
+```powershell
+kubectl create configmap k6-script --from-file=test.js=k6/test.js -n smart-traffic --dry-run=client -o yaml | kubectl apply -f -
+kubectl create configmap k6-run-profile --from-literal=RUN_PROFILE=normal -n smart-traffic --dry-run=client -o yaml | kubectl apply -f -
+kubectl delete job k6-test -n smart-traffic --ignore-not-found
+kubectl apply -f k8s/k6/k6.yaml
+kubectl wait --for=condition=complete job/k6-test -n smart-traffic --timeout=25m
+kubectl logs -n smart-traffic job/k6-test
+```
+
+`RUN_PROFILE` 값을 `normal`, `burst`, `slow`, `error`, `all` 중 하나로 바꿔 실행합니다.
+프로필이 끝난 뒤에는 시나리오별 요청·오류 수를 확인할 수 있습니다.
 ```sql
 SELECT scenario, status_code, COUNT(*) AS requests
 FROM request_logs
@@ -159,17 +178,6 @@ ORDER BY scenario, status_code;
 ```
 
 테스트 Job은 완료 1시간 후 자동으로 정리됩니다.
-```bash
-kubectl apply -f k8s/k6/k6.yaml
-kubectl wait --for=condition=complete job/k6-test -n smart-traffic --timeout=120s
-kubectl logs -n smart-traffic job/k6-test
-```
-
-완료되기 전에 다시 실행하려면 이전 Job을 지운 뒤 다시 적용합니다.
-```bash
-kubectl delete job k6-test -n smart-traffic
-kubectl apply -f k8s/k6/k6.yaml
-```
 
 ### deployment 재배포 
 ```bash
