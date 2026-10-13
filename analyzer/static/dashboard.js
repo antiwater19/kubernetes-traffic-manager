@@ -25,6 +25,11 @@ function setCell(row, value, className) {
 
 function renderSummary(data) {
   state.summary = data;
+  const model = data.detector_metadata || {};
+  const modelStatus = model.status === 'ready'
+    ? `Isolation Forest 준비됨 · 기준 ${numberFormat.format(model.training_samples || 0)}구간`
+    : `Isolation Forest 기준 수집 중 · ${numberFormat.format(model.training_samples || 0)}/${numberFormat.format(model.minimum_training_samples || 20)}구간`;
+  document.querySelector('.analyzer-status small').textContent = modelStatus;
   document.getElementById('kpi-requests').textContent = numberFormat.format(data.total_requests || 0);
   document.getElementById('kpi-findings').textContent = numberFormat.format((data.findings || []).length);
   document.getElementById('finding-note').textContent = `${numberFormat.format(data.unique_clients || 0)}개 클라이언트 중 탐지`;

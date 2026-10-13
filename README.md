@@ -133,12 +133,31 @@ curl -X POST "http://localhost:9000/analyze?window_seconds=60"
 curl "http://localhost:9000/analyses?limit=20"
 curl "http://localhost:9000/analyses/1"
 ```
-현재 `windowed-rules-v1`은 최근 60초의 IP별 요청 수(20건 초과), 오류 비율,
-평균 응답 시간을 보는 규칙 기반 초기 탐지기입니다. 분석 요청은 NetworkPolicy를 자동 변경하지 않습니다.
+분석기는 규칙 탐지와 Isolation Forest를 함께 사용합니다. 규칙은 요청 수, 오류 비율,
+평균 응답 시간을 확인하고, Isolation Forest는 직전 7일의 IP별 60초 집계(요청 수,
+오류율, 평균/p95 응답 시간, 경로 수)를 기준선으로 최근 60초 패턴을 점수화합니다.
+학습 기준이 20개 구간보다 적으면 모델 결과는 `insufficient_data`로 표시되고 규칙 탐지만 동작합니다.
+응답과 저장된 분석 결과의 `detector_metadata`에 모델 준비 상태와 학습 표본 수가 포함됩니다.
+첫 적용 뒤 새 기준선 표본을 모으려면 주기적으로 `/analyze`를 호출할 필요 없이 트래픽 로그를 쌓으면 됩니다.
+분석 요청은 NetworkPolicy를 자동 변경하지 않습니다.
 
 ### k6 부하 테스트
-Kubernetes 안에서 5명의 가상 사용자가 30초 동안 Ingress를 거쳐 요청합니다.
-`/api`, `/slow`, `/burst`, `/error` 경로를 섞어서 호출하며 결과는 PostgreSQL에 저장됩니다.
+Kubernetes 안에서 아래 네 가지 시나리오가 Ingress를 거쳐 실행됩니다.
+
+- `normal`: `/api`에 정상 요청
+- `burst`: 초당 8건의 `/burst` 요청
+- `slow`: 2초 지연되는 `/slow` 요청
+- `error`: `/error` 요청. 약 절반은 HTTP 500을 반환합니다.
+
+각 요청의 `scenario` 값과 실제 HTTP 상태 코드가 PostgreSQL `request_logs`에 저장됩니다.
+시나리오별 요청·오류 수는 다음 SQL로 확인할 수 있습니다.
+```sql
+SELECT scenario, status_code, COUNT(*) AS requests
+FROM request_logs
+GROUP BY scenario, status_code
+ORDER BY scenario, status_code;
+```
+
 테스트 Job은 완료 1시간 후 자동으로 정리됩니다.
 ```bash
 kubectl apply -f k8s/k6/k6.yaml

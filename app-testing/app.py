@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
@@ -34,6 +34,9 @@ async def record_traffic(request: Request, call_next):
             request.client.host if request.client else "unknown"
         )
         latency_ms = round((time.perf_counter() - started_at) * 1000, 2)
+        scenario = request.headers.get("x-traffic-scenario", "").strip().lower()
+        if scenario not in {"normal", "burst", "slow", "error"}:
+            scenario = None
         try:
             with SessionLocal() as session:
                 session.add(RequestLog(
@@ -43,11 +46,12 @@ async def record_traffic(request: Request, call_next):
                     status_code=status_code,
                     latency_ms=latency_ms,
                     user_agent=request.headers.get("user-agent", "")[:512],
+                    scenario=scenario,
                 ))
                 session.commit()
             logging.info(
-                "[TRAFFIC] IP=%s METHOD=%s PATH=%s STATUS=%s LATENCY_MS=%s",
-                client_ip, request.method, request.url.path, status_code, latency_ms,
+                "[TRAFFIC] IP=%s SCENARIO=%s METHOD=%s PATH=%s STATUS=%s LATENCY_MS=%s",
+                client_ip, scenario or "-", request.method, request.url.path, status_code, latency_ms,
             )
         except SQLAlchemyError:
             logging.exception("[TRAFFIC] Failed to persist request log")
@@ -176,10 +180,10 @@ async def error(request: Request):
     if random.random() < 0.5:
         logging.warning(f"[ERROR] IP={client_ip}")
 
-        return {
-            "error": "something went wrong",
-            "ip": client_ip
-        }
+        return JSONResponse(
+            status_code=500,
+            content={"error": "something went wrong", "ip": client_ip},
+        )
 
     logging.info(f"[ERROR_TEST_OK] IP={client_ip}")
 

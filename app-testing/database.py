@@ -1,6 +1,6 @@
 import os
 
-from sqlalchemy import DateTime, Float, Integer, String, create_engine, func
+from sqlalchemy import DateTime, Float, Integer, String, create_engine, func, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 
@@ -27,6 +27,7 @@ class RequestLog(Base):
     status_code: Mapped[int] = mapped_column(Integer)
     latency_ms: Mapped[float] = mapped_column(Float)
     user_agent: Mapped[str] = mapped_column(String(512), default="")
+    scenario: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     created_at: Mapped[object] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
     )
@@ -34,3 +35,8 @@ class RequestLog(Base):
 
 def init_db():
     Base.metadata.create_all(bind=engine)
+    # Preserve existing request history while extending older installs.
+    with engine.begin() as connection:
+        connection.execute(text(
+            "ALTER TABLE request_logs ADD COLUMN IF NOT EXISTS scenario VARCHAR(64)"
+        ))

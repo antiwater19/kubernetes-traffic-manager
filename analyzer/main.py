@@ -43,6 +43,7 @@ def serialize_analysis(record: AnalysisResult) -> dict:
         "timeline": record.timeline,
         "client_summaries": record.client_summaries,
         "findings": record.findings,
+        "detector_metadata": record.detector_metadata,
     }
 
 

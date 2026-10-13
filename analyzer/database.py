@@ -63,6 +63,7 @@ class AnalysisResult(Base):
     timeline: Mapped[list] = mapped_column(JSON)
     client_summaries: Mapped[list] = mapped_column(JSON)
     findings: Mapped[list] = mapped_column(JSON)
+    detector_metadata: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
 def init_db():
@@ -76,4 +77,8 @@ def init_db():
         connection.execute(text(
             "ALTER TABLE analysis_results ADD COLUMN IF NOT EXISTS "
             "timeline JSON NOT NULL DEFAULT '[]'::json"
+        ))
+        connection.execute(text(
+            "ALTER TABLE analysis_results ADD COLUMN IF NOT EXISTS "
+            "detector_metadata JSON NOT NULL DEFAULT '{}'::json"
         ))
