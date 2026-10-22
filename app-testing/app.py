@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from prometheus_fastapi_instrumentator import Instrumentator
 from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -13,6 +14,10 @@ from database import RequestLog, SessionLocal, init_db
 
 # FastAPI 애플리케이션 생성
 app = FastAPI()
+Instrumentator(
+    should_ignore_untemplated=True,
+    excluded_handlers=["/metrics"],
+).instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
 
 
 @app.on_event("startup")
@@ -22,6 +27,11 @@ def startup():
 
 @app.middleware("http")
 async def record_traffic(request: Request, call_next):
+    # Prometheus scrapes this endpoint periodically; keep monitoring traffic out
+    # of the application request log used by the anomaly detector.
+    if request.url.path == "/metrics":
+        return await call_next(request)
+
     started_at = time.perf_counter()
     status_code = 500
     try:

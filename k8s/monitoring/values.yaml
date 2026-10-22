@@ -1,0 +1,14 @@
+# Overrides for the pinned kube-prometheus-stack Helm release.
+alertmanager:
+  enabled: false
+
+nodeExporter:
+  enabled: false
+
+grafana:
+  persistence:
+    enabled: false
+
+prometheus:
+  prometheusSpec:
+    retention: 3d

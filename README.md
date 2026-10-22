@@ -23,7 +23,7 @@ smart-traffic-system/
 │   │
 │   ├── monitoring/           # 모니터링 스택
 │   │   ├── prometheus.yaml
-│   │   └── grafana.yaml
+│   │   └── values.yaml
 │   │
 │   ├── security/             # 차단 정책
 │   │   └── network-policy.yaml
@@ -110,6 +110,56 @@ kubectl apply -f k8s/analyzer/deployment.yaml
 kubectl apply -f k8s/analyzer/service.yaml
 kubectl rollout status deployment/traffic-analyzer -n smart-traffic
 ```
+
+### Prometheus와 Grafana 모니터링 설치
+
+Prometheus/Grafana는 Helm `kube-prometheus-stack` 차트로 설치하고, 앱 메트릭 수집 대상은 `ServiceMonitor` 매니페스트로 관리합니다. 앱과 analyzer의 `/metrics` 경로는 Prometheus 메트릭 전용이며, test app은 이 경로의 스크레이프 요청을 트래픽 분석 DB에 기록하지 않습니다.
+
+```powershell
+# Helm 차트 저장소 (최초 1회)
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update prometheus-community
+
+# Prometheus, Grafana, Kubernetes 기본 모니터링 설치
+helm upgrade --install traffic-monitoring prometheus-community/kube-prometheus-stack `
+  --version 92.11.0 `
+  --namespace monitoring --create-namespace `
+  --values k8s/monitoring/values.yaml
+
+# 앱/analyzer 스크레이프 대상과 NetworkPolicy 적용
+kubectl apply -f k8s/monitoring/prometheus.yaml
+kubectl apply -f k8s/security/monitoring-network-policy.yaml
+
+# 모니터링 Pod 준비 확인
+kubectl get pods -n monitoring
+```
+
+앱 코드를 바꾼 뒤에는 새 이미지 버전을 빌드해 Docker Hub에 올린 다음 배포를 갱신합니다. 현재 모니터링 버전은 test app `v8`, analyzer `v11`입니다.
+
+```powershell
+docker build -t antiwater19/test-web-app:v8 ./app-testing
+docker build -t antiwater19/traffic-analyzer:v11 ./analyzer
+docker push antiwater19/test-web-app:v8
+docker push antiwater19/traffic-analyzer:v11
+kubectl apply -f k8s/app/deployment.yaml
+kubectl apply -f k8s/analyzer/deployment.yaml
+kubectl rollout status deployment/test-web-app -n smart-traffic
+kubectl rollout status deployment/traffic-analyzer -n smart-traffic
+```
+
+Grafana와 Prometheus는 Ingress로 외부에 공개하지 않고 로컬 포트포워딩으로 접속합니다.
+
+```powershell
+# 각 명령은 별도의 터미널에서 실행
+kubectl port-forward -n monitoring svc/traffic-monitoring-grafana 3000:80
+kubectl port-forward -n monitoring svc/traffic-monitoring-kube-prometheus-prometheus 9090:9090
+
+# Grafana 비밀번호 확인 (기본 사용자: admin)
+[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String((kubectl get secret -n monitoring traffic-monitoring-grafana -o jsonpath='{.data.admin-password}')))
+```
+
+- Grafana: <http://localhost:3000>
+- Prometheus: <http://localhost:9090/targets>
 
 ### 트래픽 로그 확인
 ```bash

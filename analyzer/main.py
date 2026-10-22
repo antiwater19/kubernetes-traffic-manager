@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from prometheus_fastapi_instrumentator import Instrumentator
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -11,6 +12,10 @@ from pathlib import Path
 
 
 app = FastAPI(title="Smart Traffic Analyzer")
+Instrumentator(
+    should_ignore_untemplated=True,
+    excluded_handlers=["/metrics"],
+).instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
 BASE_DIR = Path(__file__).resolve().parent
 app.mount(
     "/dashboard-static",

@@ -18,7 +18,7 @@ spec:
       serviceAccountName: traffic-analyzer-sa
       containers:
         - name: traffic-analyzer
-          image: traffic-analyzer:dev
+          image: antiwater19/traffic-analyzer:v11
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 9000

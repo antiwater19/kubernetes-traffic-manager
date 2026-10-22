@@ -1,0 +1,37 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: test-web-app
+  namespace: monitoring
+  labels:
+    release: traffic-monitoring
+spec:
+  namespaceSelector:
+    matchNames:
+      - smart-traffic
+  selector:
+    matchLabels:
+      app: test-web-app
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: traffic-analyzer
+  namespace: monitoring
+  labels:
+    release: traffic-monitoring
+spec:
+  namespaceSelector:
+    matchNames:
+      - smart-traffic
+  selector:
+    matchLabels:
+      app: traffic-analyzer
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
