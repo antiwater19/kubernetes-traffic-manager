@@ -47,6 +47,32 @@ if (profile === 'all') {
   selectedScenarios = {
     normal_traffic: { ...allScenarios.normal_traffic, duration: '21m' },
   };
+} else if (profile === 'normal_eval') {
+  selectedScenarios = {
+    normal_traffic: { ...allScenarios.normal_traffic, duration: '5m' },
+    analysis_sampler: {
+      executor: 'constant-vus',
+      exec: 'analysisSampler',
+      vus: 1,
+      duration: '4m',
+      startTime: '60s',
+      tags: { traffic_scenario: 'normal_eval' },
+    },
+  };
+} else if (profile === 'normal_sample') {
+  selectedScenarios = { normal_traffic: allScenarios.normal_traffic };
+} else if (profile === 'normal_sample_60s') {
+  selectedScenarios = {
+    normal_traffic: { ...allScenarios.normal_traffic, duration: '60s' },
+  };
+} else if (['burst_1', 'burst_2', 'burst_4', 'burst_8'].includes(profile)) {
+  const { startTime, ...scenario } = allScenarios.burst_traffic;
+  scenario.rate = Number(profile.split('_')[1]);
+  selectedScenarios = { [profile]: scenario };
+} else if (['burst_8_10s', 'burst_8_30s', 'burst_8_60s'].includes(profile)) {
+  const { startTime, ...scenario } = allScenarios.burst_traffic;
+  scenario.duration = profile.split('_')[2];
+  selectedScenarios = { [profile]: scenario };
 } else if (profile === 'burst') {
   const { startTime, ...scenario } = allScenarios.burst_traffic;
   selectedScenarios = { burst_traffic: scenario };
@@ -57,7 +83,7 @@ if (profile === 'all') {
   const { startTime, ...scenario } = allScenarios.error_spike;
   selectedScenarios = { error_spike: scenario };
 } else {
-  throw new Error(`Unknown RUN_PROFILE "${profile}". Use all, normal, burst, slow, or error.`);
+  throw new Error(`Unknown RUN_PROFILE "${profile}". Use all, normal, normal_eval, normal_sample, normal_sample_60s, burst_1, burst_2, burst_4, burst_8, burst_8_10s, burst_8_30s, burst_8_60s, burst, slow, or error.`);
 }
 
 export const options = { scenarios: selectedScenarios };
@@ -93,21 +119,30 @@ export function errorTraffic() {
   sleep(0.5);
 }
 
+export function analysisSampler() {
+  saveAnalysis('normal_eval_sample');
+  sleep(60);
+}
+
 export function teardown() {
   if (__ENV.ANALYZE_AFTER_RUN !== 'true') return;
 
+  saveAnalysis('final');
+}
+
+function saveAnalysis(label) {
   const analyzerUrl = __ENV.ANALYZER_URL ||
     'http://traffic-analyzer-service.smart-traffic.svc.cluster.local:9000/analyze?window_seconds=60';
   const response = http.post(analyzerUrl);
   if (response.status < 200 || response.status >= 300) {
-    console.log(`[ANALYZER] request failed: HTTP ${response.status} ${response.body}`);
+    console.log(`[ANALYZER] ${label} request failed: HTTP ${response.status} ${response.body}`);
     return;
   }
 
   const result = response.json();
   const model = result.detector_metadata || {};
   console.log(
-    `[ANALYZER] saved id=${result.id} requests=${result.total_requests} ` +
+    `[ANALYZER] ${label} saved id=${result.id} requests=${result.total_requests} ` +
     `findings=${(result.findings || []).length} model=${model.status} ` +
     `training_samples=${model.training_samples} anomalies=${model.anomalies || 0}`,
   );

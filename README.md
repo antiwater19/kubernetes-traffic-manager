@@ -134,13 +134,13 @@ kubectl apply -f k8s/security/monitoring-network-policy.yaml
 kubectl get pods -n monitoring
 ```
 
-앱 코드를 바꾼 뒤에는 새 이미지 버전을 빌드해 Docker Hub에 올린 다음 배포를 갱신합니다. 현재 모니터링 버전은 test app `v8`, analyzer `v11`입니다.
+앱 코드를 바꾼 뒤에는 새 이미지 버전을 빌드해 Docker Hub에 올린 다음 배포를 갱신합니다. 현재 배포 버전은 test app `v8`, analyzer `v16`입니다. Isolation Forest는 과거 정상 기준선만으로 학습하고 최근 트래픽을 고정된 모델로 점수화합니다.
 
 ```powershell
 docker build -t antiwater19/test-web-app:v8 ./app-testing
-docker build -t antiwater19/traffic-analyzer:v11 ./analyzer
+docker build -t antiwater19/traffic-analyzer:v16 ./analyzer
 docker push antiwater19/test-web-app:v8
-docker push antiwater19/traffic-analyzer:v11
+docker push antiwater19/traffic-analyzer:v16
 kubectl apply -f k8s/app/deployment.yaml
 kubectl apply -f k8s/analyzer/deployment.yaml
 kubectl rollout status deployment/test-web-app -n smart-traffic
@@ -173,6 +173,7 @@ kubectl logs -n smart-traffic -l app=test-web-app --prefix=true
 ### 최근 트래픽 집계와 분석 결과
 analyzer는 PostgreSQL에서 요청 로그를 직접 조회해 기본 60초 구간을 집계합니다.
 분석은 `analysis_results` 테이블에 저장되며, 구간별 지표, IP별 요약, 탐지 사유를 포함합니다.
+응답의 `detector_metadata.rule_findings`, `isolation_forest_findings`, `combined_findings`는 각 방식별 탐지 클라이언트 수를 나타냅니다. `findings[]`의 `detection_sources`와 `rule_reasons`로 IP별 탐지 출처와 규칙 근거도 확인할 수 있습니다.
 ```bash
 kubectl port-forward -n smart-traffic svc/traffic-analyzer-service 9000:9000
 # 최근 60초 집계만 조회
@@ -192,11 +193,16 @@ IP별 60초 집계(요청 수, 오류율, 평균/p95 응답 시간, 경로 수)�
 첫 적용 뒤 새 기준선 표본을 모으려면 주기적으로 `/analyze`를 호출할 필요 없이 트래픽 로그를 쌓으면 됩니다.
 분석 요청은 NetworkPolicy를 자동 변경하지 않습니다.
 
+기존 정상·이상 시나리오의 Isolation Forest 초기 오탐률과 탐지율은 [평가 기록](GuideBook/탐지율_초기평가.md)을 참고하세요. 이 수치는 저장된 과거 분석 결과에서 계산한 초기 비교입니다.
+
 ### k6 트래픽 수집 및 이상 탐지 검증
 k6는 프로필별로 실행해 정상 기준선과 이상 시나리오를 분리합니다.
 
 - `normal`: `/api`에 낮은 빈도의 정상 요청을 21분간 발생시켜 모델 기준선 수집
-- `burst`: 초당 8건의 `/burst` 요청
+- `normal_sample`, `normal_sample_60s`: 별도 Job에서 정상 트래픽을 30초 또는 60초 실행해 오탐 평가
+- `burst_1`, `burst_2`, `burst_4`, `burst_8`: `/burst`에 초당 1·2·4·8건 요청을 보내 강도별 탐지 반응 비교
+- `burst_8_10s`, `burst_8_30s`, `burst_8_60s`: 초당 8건을 유지하며 burst 지속 시간 비교
+- `burst`: 초당 8건의 `/burst` 요청 (기존 프로필)
 - `slow`: 2초 지연되는 `/slow` 요청
 - `error`: `/error` 요청. 약 절반은 HTTP 500을 반환합니다.
 - `all`: 네 가지 시나리오를 짧게 함께 실행하는 전시 시연용 프로필
@@ -218,7 +224,7 @@ kubectl wait --for=condition=complete job/k6-test -n smart-traffic --timeout=25m
 kubectl logs -n smart-traffic job/k6-test
 ```
 
-`RUN_PROFILE` 값을 `normal`, `burst`, `slow`, `error`, `all` 중 하나로 바꿔 실행합니다.
+`RUN_PROFILE` 값을 `normal`, `normal_eval`, `normal_sample`, `normal_sample_60s`, `burst_1`, `burst_2`, `burst_4`, `burst_8`, `burst_8_10s`, `burst_8_30s`, `burst_8_60s`, `burst`, `slow`, `error`, `all` 중 하나로 바꿔 실행합니다. `normal`은 21분 기준선 수집용이고, `normal_eval`은 기준선 준비 후 정상 요청을 5분 보내면서 매 60초 분석 결과를 저장합니다. 별도 오탐 검증에서는 `normal_sample_60s`처럼 분석 창과 같은 60초 길이를 사용하세요. 지속 시간 또는 강도별 실험은 각 Job이 끝난 뒤 최소 70초 기다려 분석 시간창이 겹치지 않게 합니다.
 프로필이 끝난 뒤에는 시나리오별 요청·오류 수를 확인할 수 있습니다.
 ```sql
 SELECT scenario, status_code, COUNT(*) AS requests
@@ -246,6 +252,8 @@ kubectl port-forward -n smart-traffic svc/traffic-analyzer-service 9000:9000
 
 명령이 `Forwarding from 127.0.0.1:9000 -> 9000`이라고 표시되면 브라우저에서 [http://localhost:9000/dashboard](http://localhost:9000/dashboard)를 여세요.
 대시보드 요약은 5초마다 갱신됩니다. 분석 구간을 고르고 **지금 분석하기**를 누르면 해당 구간의 분석 결과가 DB에 저장됩니다.
+대시보드의 **분석 가이드** 버튼 또는 [http://localhost:9000/guide](http://localhost:9000/guide)에서 데이터 흐름, 탐지 방식, Isolation Forest 기준선 수집, k6 프로필과 API 사용법을 확인할 수 있습니다.
+대시보드와 가이드 상단의 테마 버튼으로 다크 모드와 라이트 모드를 전환할 수 있으며, 선택은 브라우저에 저장됩니다.
 대시보드를 닫을 때는 포트포워딩 중인 터미널에서 `Ctrl+C`를 누르세요.
 
 접속되지 않으면 다른 프로그램이 9000 포트를 사용 중인지 확인한 뒤, 예를 들어 로컬 포트만 9001로 바꿔 실행하고 `http://localhost:9001/dashboard`로 접속할 수 있습니다.

@@ -70,6 +70,11 @@ async def dashboard():
     return FileResponse(BASE_DIR / "templates" / "dashboard.html")
 
 
+@app.get("/guide", include_in_schema=False)
+async def analysis_guide():
+    return FileResponse(BASE_DIR / "templates" / "guide.html")
+
+
 @app.get("/traffic/summary")
 async def traffic_summary(
     window_seconds: int = Query(default=60, ge=1, le=86400),

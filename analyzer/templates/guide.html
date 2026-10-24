@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f7fb">
+  <title>Smart Traffic | 분석 사용 가이드</title>
+  <link rel="stylesheet" href="/dashboard-static/dashboard.css">
+  <link rel="stylesheet" href="/dashboard-static/guide.css">
+  <script src="/dashboard-static/theme.js"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="/dashboard" aria-label="Smart Traffic 홈">
+        <span class="brand-mark"><span></span><span></span><span></span></span>
+        <span class="brand-copy"><strong>smart<span>traffic</span></strong><small>SECURITY CONSOLE</small></span>
+      </a>
+      <div class="side-label">WORKSPACE</div>
+      <a class="nav-item" href="/dashboard"><span class="nav-icon">▦</span>트래픽 개요</a>
+      <a class="nav-item active" href="/guide"><span class="nav-icon">?</span>분석 사용 가이드</a>
+      <div class="sidebar-bottom">
+        <div class="side-label">ANALYZER</div>
+        <div class="analyzer-status"><i></i><span><strong>분석 엔진</strong><small>Rules + Isolation Forest</small></span></div>
+        <div class="side-foot">Smart Traffic System<br>Graduation Project</div>
+      </div>
+    </aside>
+
+    <main class="main-content guide-main">
+      <header class="topbar">
+        <div class="breadcrumbs"><a href="/dashboard">Workspace</a><b>/</b><strong>분석 사용 가이드</strong></div>
+        <div class="guide-top-actions"><button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false"><span class="theme-icon" aria-hidden="true">◐</span><span class="theme-label">다크 모드</span></button><a class="guide-back" href="/dashboard">← 대시보드로 돌아가기</a></div>
+      </header>
+
+      <section class="guide-hero">
+        <div class="eyebrow">SMART TRAFFIC · ANALYZER GUIDE</div>
+        <h1>트래픽 분석 사용 가이드</h1>
+        <p>요청이 어떻게 기록되고, 어떤 기준으로 이상 징후를 찾는지와 직접 실행하는 방법을 설명합니다.</p>
+        <div class="guide-tags"><span>FastAPI</span><span>PostgreSQL</span><span>Rules</span><span>Isolation Forest</span><span>k6</span></div>
+      </section>
+
+      <section class="guide-section">
+        <div class="section-title"><span>01</span><div><h2>데이터 흐름</h2><p>테스트 앱으로 보낸 요청은 로그가 된 다음 분석 결과로 저장됩니다.</p></div></div>
+        <div class="flow-steps">
+          <article><b>1</b><strong>요청 생성</strong><p>브라우저 또는 k6가 테스트 앱의 API를 호출합니다.</p></article><i aria-hidden="true">→</i>
+          <article><b>2</b><strong>로그 기록</strong><p>FastAPI 미들웨어가 요청 정보와 응답 결과를 PostgreSQL <code>request_logs</code>에 남깁니다.</p></article><i aria-hidden="true">→</i>
+          <article><b>3</b><strong>구간 분석</strong><p>Analyzer가 최근 구간을 집계해 규칙과 Isolation Forest로 검사합니다.</p></article><i aria-hidden="true">→</i>
+          <article><b>4</b><strong>결과 확인</strong><p>대시보드에서 확인하고 분석 실행 결과는 <code>analysis_results</code>에 저장합니다.</p></article>
+        </div>
+        <div class="info-note"><strong>역할 구분</strong><span>테스트 앱은 요청 로그를 쓰고 Analyzer는 그 로그를 읽어 분석 결과를 저장합니다. Prometheus 메트릭은 별도 경로이며 Isolation Forest 입력 데이터가 아닙니다.</span></div>
+      </section>
+
+      <section class="guide-section">
+        <div class="section-title"><span>02</span><div><h2>두 가지 탐지 방식</h2><p>명확한 임계치와 정상 패턴에서 벗어난 정도를 함께 살펴봅니다.</p></div></div>
+        <div class="guide-card-grid">
+          <article class="guide-card"><div class="card-kicker">RULE BASED</div><h3>규칙 기반 탐지</h3><p>정해 둔 기준을 넘으면 경고합니다. 빠르고 근거를 설명하기 쉽습니다.</p><ul><li>선택 구간에서 IP별 요청이 <b>20건 초과</b></li><li>오류가 <b>3건 이상</b>이고 오류율이 <b>50% 이상</b></li><li>요청이 <b>3건 이상</b>이고 평균 응답 시간이 <b>1,000ms 이상</b></li></ul><small>요청 수가 60건 이상이거나 오류율이 80% 이상이면 심각도 높음으로 표시합니다.</small></article>
+          <article class="guide-card"><div class="card-kicker">UNSUPERVISED ML</div><h3>Isolation Forest</h3><p>정상으로 수집한 구간과 비교해 여러 특성의 조합이 드문 IP를 이상 후보로 표시합니다.</p><div class="feature-list"><span>요청 수</span><span>오류율</span><span>평균 지연</span><span>p95 지연</span><span>경로 수</span></div><small>현재 설정: 트리 150개, contamination 0.05, random_state 42. IP별 최근 60초 데이터를 점수화합니다.</small></article>
+        </div>
+        <div class="info-note caution"><strong>알아둘 점</strong><span>Isolation Forest는 외부 AI API나 라벨이 있는 지도학습 모델이 아닙니다. <code>normal</code>로 표시된 과거 로그로 기준선을 만들며, 표본이 20개보다 적으면 <code>insufficient_data</code>가 되어 규칙 탐지만 유효합니다.</span></div>
+      </section>
+
+      <section class="guide-section">
+        <div class="section-title"><span>03</span><div><h2>정상 기준선 수집과 학습</h2><p>Analyzer가 분석 요청을 받으면 기준선 데이터를 확인하고 필요하면 집계·학습 데이터를 갱신합니다.</p></div></div>
+        <ol class="guide-list">
+          <li><b>1. k6에서 normal 프로필 실행</b><span>21분 동안 낮은 빈도의 정상 요청을 보냅니다. 요청은 <code>X-Traffic-Scenario: normal</code>로 표시되어 DB에 저장됩니다.</span></li>
+          <li><b>2. 기준선 표본 확인</b><span>분석 구간 직전 1일의 normal 요청을 클라이언트 IP별 분 단위로 집계합니다. 20개 이상의 분 단위 표본이 필요합니다.</span></li>
+          <li><b>3. 분석 요청으로 모델 평가</b><span>최근 60초의 요청 특성을 계산해 기준선과 함께 Isolation Forest에 넣고 이상 점수와 판정을 만듭니다. 응답의 detector_metadata에서 학습 표본 수와 ready 상태를 확인합니다.</span></li>
+          <li><b>4. 정상·이상 시나리오 비교</b><span>기준선 수집 후 normal_eval으로 오탐을 확인하고 burst·slow·error를 각각 실행해 탐지 결과를 비교합니다.</span></li>
+        </ol>
+        <div class="info-note"><strong>모델 캐시</strong><span>학습 집계는 Analyzer 프로세스 메모리에 캐시됩니다(기준선이 있으면 최대 5분, 아직 없으면 최대 1분). Pod가 재시작되면 DB 로그에서 다시 읽습니다. DB에 저장된 정상 기준선 로그는 유지됩니다.</span></div>
+      </section>
+
+      <section class="guide-section">
+        <div class="section-title"><span>04</span><div><h2>k6 시나리오 실행</h2><p>프로필별로 정상 기준선을 모으거나 이상 징후를 재현합니다.</p></div></div>
+        <div class="table-scroll guide-table"><table><thead><tr><th>프로필</th><th>동작</th><th>용도</th></tr></thead><tbody>
+          <tr><td><code>normal</code></td><td><code>/api</code>에 5초 간격 요청, 21분</td><td>정상 기준선 수집</td></tr>
+          <tr><td><code>normal_eval</code></td><td>정상 요청 5분, 매 60초 분석 저장</td><td>기준선 이후 여러 정상 창의 오탐 확인</td></tr>
+          <tr><td><code>burst_1/2/4/8</code></td><td><code>/burst</code> 초당 1·2·4·8건, 10초</td><td>강도별 요청량 탐지 반응 비교</td></tr>
+          <tr><td><code>burst</code></td><td><code>/burst</code> 초당 8건, 10초</td><td>기존 요청량 급증 시연</td></tr>
+          <tr><td><code>slow</code></td><td>2초 지연 <code>/slow</code> 요청, 20초</td><td>응답 지연 확인</td></tr>
+          <tr><td><code>error</code></td><td><code>/error</code>, 약 절반 HTTP 500</td><td>오류 증가 확인</td></tr>
+          <tr><td><code>all</code></td><td>시나리오를 짧게 함께 실행</td><td>전시용 통합 시연</td></tr>
+        </tbody></table></div>
+        <p class="guide-caption">PowerShell 프로젝트 루트에서 실행합니다. 다음 프로필은 이전 Job 종료 후 60초 이상 간격을 두세요.</p>
+        <pre><code>kubectl create configmap k6-run-profile --from-literal=RUN_PROFILE=normal -n smart-traffic --dry-run=client -o yaml | kubectl apply -f -
+kubectl delete job k6-test -n smart-traffic --ignore-not-found
+kubectl apply -f k8s/k6/k6.yaml
+kubectl wait --for=condition=complete job/k6-test -n smart-traffic --timeout=25m
+kubectl logs -n smart-traffic job/k6-test</code></pre>
+        <p class="guide-caption">다른 시나리오를 실행할 때는 첫 명령의 <code>normal</code>을 <code>normal_eval</code>, <code>burst_1</code>, <code>burst_2</code>, <code>burst_4</code>, <code>burst_8</code>, <code>slow</code>, <code>error</code> 또는 <code>all</code>로 바꿉니다. 스크립트를 수정했다면 README의 ConfigMap 갱신 명령도 먼저 실행하세요.</p>
+      </section>
+
+      <section class="guide-section">
+        <div class="section-title"><span>05</span><div><h2>접속과 API 사용</h2><p>Analyzer는 Kubernetes 내부 서비스로 실행되므로 로컬에서 볼 때 포트포워딩을 엽니다.</p></div></div>
+        <pre><code>kubectl port-forward -n smart-traffic svc/traffic-analyzer-service 9000:9000</code></pre>
+        <div class="endpoint-grid">
+          <article><code>http://localhost:9000/dashboard</code><span>실시간 대시보드</span></article>
+          <article><code>http://localhost:9000/guide</code><span>이 사용 가이드</span></article>
+          <article><code>GET /traffic/summary?window_seconds=60</code><span>최근 구간 요약만 조회, 저장하지 않음</span></article>
+          <article><code>POST /analyze?window_seconds=60</code><span>분석 실행 후 결과를 DB에 저장</span></article>
+          <article><code>GET /analyses?limit=20</code><span>최근 저장 결과 목록</span></article>
+          <article><code>GET /analyses/{id}</code><span>저장된 결과 한 건 조회</span></article>
+        </div>
+        <pre><code>curl -X POST "http://localhost:9000/analyze?window_seconds=60"
+curl "http://localhost:9000/analyses?limit=20"</code></pre>
+        <div class="info-note"><strong>저장 위치</strong><span>요청 로그는 PostgreSQL <code>request_logs</code>, 분석 실행 결과는 <code>analysis_results</code>에 저장됩니다. 대시보드는 포트포워딩 터미널이 실행 중인 동안 접속할 수 있습니다.</span></div>
+      </section>
+      <footer class="guide-footer"><span>설명은 현재 구현된 Analyzer 동작을 기준으로 작성했습니다.</span><a href="/dashboard">대시보드로 돌아가기 ↑</a></footer>
+    </main>
+  </div>
+</body>
+</html>

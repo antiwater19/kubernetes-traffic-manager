@@ -128,9 +128,11 @@ def _run_isolation_forest(session: Session, window_started_at: datetime, window_
         random_state=42,
         n_jobs=1,
     )
-    # Include the current scoring batch so values outside the historical range
-    # can be isolated as outliers by the forest's random splits.
-    model.fit(np.vstack([training, current]))
+    # Keep the reference distribution fixed: recent traffic is scored against
+    # the historical normal baseline and cannot move its own decision boundary.
+    model.fit(training)
+    metadata["fit_scope"] = "historical_normal_baseline"
+    metadata["scoring_batch_included_in_training"] = False
     metadata["decision_threshold"] = round(float(model.offset_), 6)
     predictions = model.predict(current)
     decision_scores = model.decision_function(current)
@@ -250,14 +252,14 @@ def analyze_recent_traffic(session: Session, window_seconds: int) -> dict:
             client["isolation_forest"] = score
         clients.append(client)
 
-        reasons = []
+        rule_reasons = []
         if request_count > REQUEST_COUNT_THRESHOLD:
-            reasons.append(
+            rule_reasons.append(
                 f"최근 {window_seconds}초 요청 {request_count}건이 "
                 f"기준 {REQUEST_COUNT_THRESHOLD}건을 초과했습니다."
             )
         if error_count >= MIN_ERRORS_FOR_RATE_ALERT and error_rate >= ERROR_RATE_THRESHOLD:
-            reasons.append(
+            rule_reasons.append(
                 f"오류 응답 비율이 {error_rate:.0%} "
                 f"({error_count}/{request_count})입니다."
             )
@@ -265,10 +267,11 @@ def analyze_recent_traffic(session: Session, window_seconds: int) -> dict:
             request_count >= MIN_REQUESTS_FOR_LATENCY_ALERT
             and average_latency_ms >= SLOW_AVERAGE_MS_THRESHOLD
         ):
-            reasons.append(
+            rule_reasons.append(
                 f"평균 응답 시간이 {average_latency_ms:.0f}ms로 "
                 f"기준 {SLOW_AVERAGE_MS_THRESHOLD:.0f}ms 이상입니다."
             )
+        reasons = list(rule_reasons)
         if score and score["is_anomaly"]:
             reasons.append(
                 "Isolation Forest가 최근 60초의 요청량, 오류율, 응답 시간, "
@@ -276,12 +279,30 @@ def analyze_recent_traffic(session: Session, window_seconds: int) -> dict:
                 f"(점수 {score['decision_score']:.4f})"
             )
 
+        detection_sources = []
+        if rule_reasons:
+            detection_sources.append("rules")
+        if score and score["is_anomaly"]:
+            detection_sources.append("isolation_forest")
+        client["rule_reasons"] = rule_reasons
+        client["detection_sources"] = detection_sources
+
         if reasons:
             findings.append({
                 **client,
                 "severity": "high" if request_count >= 60 or error_rate >= 0.8 else "medium",
+                "rule_reasons": rule_reasons,
+                "detection_sources": detection_sources,
                 "reasons": reasons,
             })
+
+    detector_metadata["rule_findings"] = sum(
+        bool(client["rule_reasons"]) for client in clients
+    )
+    detector_metadata["isolation_forest_findings"] = sum(
+        bool(score["is_anomaly"]) for score in model_scores.values()
+    )
+    detector_metadata["combined_findings"] = len(findings)
 
     total_requests = int(totals[0])
     unique_clients = int(totals[1])

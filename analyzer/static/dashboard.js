@@ -23,6 +23,35 @@ function setCell(row, value, className) {
   return cell;
 }
 
+function getDetectionDetails(item) {
+  const reasons = Array.isArray(item.reasons) ? item.reasons : [];
+  const modelReasons = reasons.filter(reason => reason.includes('Isolation Forest'));
+  const ruleReasons = Array.isArray(item.rule_reasons)
+    ? item.rule_reasons
+    : reasons.filter(reason => !reason.includes('Isolation Forest'));
+  const sources = Array.isArray(item.detection_sources) ? item.detection_sources : [];
+  return {
+    ruleReasons,
+    modelReasons,
+    rules: sources.includes('rules') || ruleReasons.length > 0,
+    model: sources.includes('isolation_forest') || item.isolation_forest?.is_anomaly === true || modelReasons.length > 0,
+  };
+}
+
+function getDetectionCounts(record) {
+  const metadata = record.detector_metadata || {};
+  const findings = record.findings || [];
+  const ruleCount = Number.isFinite(Number(metadata.rule_findings))
+    ? Number(metadata.rule_findings)
+    : findings.filter(item => getDetectionDetails(item).rules).length;
+  const modelCount = Number.isFinite(Number(metadata.isolation_forest_findings))
+    ? Number(metadata.isolation_forest_findings)
+    : Number.isFinite(Number(metadata.anomalies))
+      ? Number(metadata.anomalies)
+      : findings.filter(item => getDetectionDetails(item).model).length;
+  return { ruleCount, modelCount };
+}
+
 function renderSummary(data) {
   state.summary = data;
   const model = data.detector_metadata || {};
@@ -38,6 +67,14 @@ function renderSummary(data) {
   document.getElementById('kpi-latency').textContent = formatMs(data.average_latency_ms);
   document.getElementById('p95-note').textContent = `95백분위 ${formatMs(data.p95_latency_ms)}`;
   document.getElementById('client-count').textContent = `${numberFormat.format((data.client_summaries || []).length)} clients`;
+  const detectionCounts = getDetectionCounts(data);
+  document.getElementById('rules-detected-count').textContent = `${numberFormat.format(detectionCounts.ruleCount)}개 클라이언트`;
+  document.getElementById('model-detected-count').textContent = `${numberFormat.format(detectionCounts.modelCount)}개 클라이언트`;
+  const minimumSamples = model.minimum_training_samples || 20;
+  const trainingSamples = model.training_samples || 0;
+  document.getElementById('model-training-note').textContent = model.status === 'ready'
+    ? `기준선 ${numberFormat.format(trainingSamples)}/${numberFormat.format(minimumSamples)}구간 · 평가 ${numberFormat.format(model.scored_clients || 0)} IP`
+    : `기준선 ${numberFormat.format(trainingSamples)}/${numberFormat.format(minimumSamples)}구간 · 규칙 탐지는 동작 중`;
 
   const updated = new Date(data.window_ended_at);
   document.getElementById('last-updated').textContent = `갱신 ${timeFormat.format(updated)}`;
@@ -68,7 +105,10 @@ function renderClients(data) {
     const badge = document.createElement('span');
     const finding = findings.get(client.client_ip);
     badge.className = `state-badge ${finding ? finding.severity : 'normal'}`;
-    badge.textContent = finding ? (finding.severity === 'high' ? '주의' : '관찰') : '정상';
+    const detection = getDetectionDetails(finding || client);
+    badge.textContent = detection.rules && detection.model
+      ? '규칙 + 모델'
+      : detection.model ? '모델' : detection.rules ? '규칙' : '정상';
     stateCell.appendChild(badge);
     row.appendChild(stateCell);
   });
@@ -101,12 +141,33 @@ function renderFindings(data) {
     badge.textContent = finding.severity === 'high' ? '높음' : '관찰';
     head.append(ip, badge);
     card.appendChild(head);
+    const detection = getDetectionDetails(finding);
+    const sources = document.createElement('div');
+    sources.className = 'detection-sources';
+    if (detection.rules) {
+      const tag = document.createElement('span');
+      tag.className = 'source-tag rules-source';
+      tag.textContent = '규칙 기반';
+      sources.appendChild(tag);
+    }
+    if (detection.model) {
+      const tag = document.createElement('span');
+      tag.className = 'source-tag model-source';
+      tag.textContent = 'Isolation Forest';
+      sources.appendChild(tag);
+    }
+    if (sources.childElementCount) card.appendChild(sources);
     const reasons = document.createElement('ul');
-    (finding.reasons || []).forEach(reason => {
+    const appendReasons = (label, items) => items.forEach(reason => {
       const item = document.createElement('li');
-      item.textContent = reason;
+      const source = document.createElement('strong');
+      source.className = 'reason-source';
+      source.textContent = `${label} · `;
+      item.append(source, document.createTextNode(reason));
       reasons.appendChild(item);
     });
+    appendReasons('규칙', detection.ruleReasons);
+    appendReasons('모델', detection.modelReasons);
     card.appendChild(reasons);
     container.appendChild(card);
   });
@@ -120,6 +181,10 @@ function renderChart(canvasId, key, points, color, unit, emptyId) {
   canvas.width = Math.max(1, Math.floor(rect.width * ratio));
   canvas.height = Math.max(1, Math.floor(rect.height * ratio));
   const ctx = canvas.getContext('2d');
+  const themeStyles = getComputedStyle(document.documentElement);
+  const gridColor = themeStyles.getPropertyValue('--chart-grid').trim() || '#edf1f6';
+  const labelColor = themeStyles.getPropertyValue('--chart-label').trim() || '#a0aaba';
+  const pointColor = themeStyles.getPropertyValue('--chart-point').trim() || '#fff';
   ctx.scale(ratio, ratio);
   const width = rect.width;
   const height = rect.height;
@@ -139,12 +204,12 @@ function renderChart(canvasId, key, points, color, unit, emptyId) {
     const y = pad.top + chartHeight * tick / tickCount;
     const value = maxValue * (tickCount - tick) / tickCount;
     ctx.beginPath();
-    ctx.strokeStyle = '#edf1f6';
+    ctx.strokeStyle = gridColor;
     ctx.lineWidth = 1;
     ctx.moveTo(pad.left, y);
     ctx.lineTo(width - pad.right, y);
     ctx.stroke();
-    ctx.fillStyle = '#a0aaba';
+    ctx.fillStyle = labelColor;
     ctx.textAlign = 'right';
     ctx.fillText(key === 'request_count' ? Math.round(value).toString() : Math.round(value).toString(), pad.left - 7, y);
   }
@@ -174,7 +239,7 @@ function renderChart(canvasId, key, points, color, unit, emptyId) {
   coords.forEach(point => {
     ctx.beginPath();
     ctx.arc(point.x, point.y, 2.5, 0, Math.PI * 2);
-    ctx.fillStyle = '#fff';
+    ctx.fillStyle = pointColor;
     ctx.fill();
     ctx.strokeStyle = color;
     ctx.lineWidth = 1.5;
@@ -184,7 +249,7 @@ function renderChart(canvasId, key, points, color, unit, emptyId) {
   points.forEach((point, index) => {
     if (index % labelEvery !== 0 && index !== points.length - 1) return;
     const x = coords[index].x;
-    ctx.fillStyle = '#a0aaba';
+    ctx.fillStyle = labelColor;
     ctx.textAlign = index === 0 ? 'left' : index === points.length - 1 ? 'right' : 'center';
     ctx.fillText(shortTimeFormat.format(new Date(point.timestamp)), x, height - 8);
   });
@@ -211,7 +276,7 @@ async function loadHistory() {
   if (!records.length) {
     const row = body.insertRow();
     const cell = setCell(row, '아직 저장된 분석이 없습니다. “지금 분석하기”를 눌러 첫 분석을 실행하세요.', 'empty-cell');
-    cell.colSpan = 6;
+    cell.colSpan = 7;
     return;
   }
   records.forEach(record => {
@@ -230,6 +295,8 @@ async function loadHistory() {
     resultCell.appendChild(result);
     row.appendChild(resultCell);
     setCell(row, numberFormat.format((record.findings || []).length), 'number-cell');
+    const detections = getDetectionCounts(record);
+    setCell(row, `규칙 ${detections.ruleCount} · IF ${detections.modelCount}`, 'source-cell');
   });
 }
 
@@ -266,5 +333,6 @@ document.getElementById('window-select').addEventListener('change', event => {
 document.getElementById('analyze-button').addEventListener('click', runAnalysis);
 document.getElementById('refresh-history').addEventListener('click', () => loadHistory().catch(error => showToast(error.message)));
 window.addEventListener('resize', () => { if (state.summary) renderSummary(state.summary); });
+window.addEventListener('themechange', () => { if (state.summary) renderSummary(state.summary); });
 refreshAll();
 state.refreshTimer = window.setInterval(() => loadSummary().catch(() => {}), 5000);
