@@ -1,0 +1,128 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1200" viewBox="0 0 1600 1200" role="img" aria-labelledby="title desc">
+  <title id="title">Kubernetes 기반 AI 트래픽 이상 탐지 시스템 포스터 시각자료</title>
+  <desc id="desc">Kubernetes 트래픽 수집과 분석 흐름, Prometheus 및 Grafana 모니터링 구조, 2026년 10월 27일 고정 기준선 평가 결과를 보여주는 포스터용 인포그래픽.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f4f8fc"/>
+      <stop offset="1" stop-color="#e9f1f8"/>
+    </linearGradient>
+    <linearGradient id="hero" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#10243e"/>
+      <stop offset="1" stop-color="#183c5b"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#66839d"/>
+    </marker>
+    <style>
+      text { font-family: "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; fill: #14283f; }
+      .small { font-size: 17px; }
+      .body { font-size: 20px; }
+      .label { font-size: 18px; font-weight: 700; letter-spacing: .4px; }
+      .heading { font-size: 27px; font-weight: 700; }
+      .muted { fill: #60748a; }
+      .white { fill: #f7fbff; }
+      .cyan { fill: #087e9b; }
+      .orange { fill: #bd6a12; }
+      .box { fill: #fff; stroke: #d9e4ee; stroke-width: 2; }
+      .nodeTitle { font-size: 20px; font-weight: 700; }
+      .nodeSub { font-size: 15px; fill: #60748a; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="1200" fill="url(#bg)"/>
+  <rect x="54" y="44" width="1492" height="220" rx="28" fill="url(#hero)"/>
+  <text x="94" y="91" class="label" fill="#7dd9e8">GRADUATION PROJECT · KUBERNETES · TRAFFIC ANALYSIS</text>
+  <text x="94" y="153" font-size="44" font-weight="700" class="white">Kubernetes 기반 AI 트래픽 이상 탐지 시스템</text>
+  <text x="96" y="202" font-size="23" fill="#d8e7f3">정상 트래픽 기준선과 규칙을 활용해 웹 서비스의 이상 징후를 분석합니다.</text>
+  <text x="96" y="238" font-size="16" fill="#b9cbd9">연구자명  [이름 입력]　　소속  [학교·학과 입력]　　지도교수  [이름 입력]</text>
+
+  <text x="68" y="318" class="heading">시스템 구조와 데이터 흐름</text>
+  <text x="68" y="348" class="small muted">요청 로그 분석과 메트릭 모니터링은 각각의 흐름으로 구성됩니다.</text>
+
+  <rect x="68" y="375" width="1464" height="422" rx="22" fill="#f8fbfe" stroke="#b9ccdc" stroke-width="2" stroke-dasharray="9 8"/>
+  <rect x="91" y="360" width="216" height="34" rx="17" fill="#e4edf5"/>
+  <text x="110" y="383" class="label">KUBERNETES CLUSTER</text>
+
+  <rect x="100" y="447" width="145" height="90" rx="16" class="box"/>
+  <text x="172" y="481" text-anchor="middle" class="nodeTitle">사용자 / k6</text>
+  <text x="172" y="510" text-anchor="middle" class="nodeSub">정상·이상 요청 생성</text>
+
+  <rect x="293" y="447" width="155" height="90" rx="16" class="box"/>
+  <text x="370" y="481" text-anchor="middle" class="nodeTitle">NGINX Ingress</text>
+  <text x="370" y="510" text-anchor="middle" class="nodeSub">요청 진입</text>
+
+  <rect x="496" y="447" width="174" height="90" rx="16" fill="#e8f6fa" stroke="#9bcedb" stroke-width="2"/>
+  <text x="583" y="481" text-anchor="middle" class="nodeTitle">테스트 웹 서비스</text>
+  <text x="583" y="510" text-anchor="middle" class="nodeSub">요청·응답 처리 / 로그 기록</text>
+
+  <rect x="719" y="447" width="166" height="90" rx="16" class="box"/>
+  <text x="802" y="481" text-anchor="middle" class="nodeTitle">PostgreSQL</text>
+  <text x="802" y="510" text-anchor="middle" class="nodeSub">요청 로그 보관</text>
+
+  <rect x="936" y="423" width="235" height="137" rx="18" fill="#e8f6fa" stroke="#69b5c7" stroke-width="2"/>
+  <text x="1053" y="462" text-anchor="middle" class="nodeTitle">트래픽 분석기</text>
+  <text x="1053" y="496" text-anchor="middle" class="nodeSub">규칙 기반 탐지</text>
+  <text x="1053" y="523" text-anchor="middle" class="nodeSub">Isolation Forest</text>
+  <text x="1053" y="546" text-anchor="middle" class="nodeSub">60초 구간 지표 집계</text>
+
+  <rect x="1220" y="447" width="250" height="90" rx="16" class="box"/>
+  <text x="1345" y="481" text-anchor="middle" class="nodeTitle">분석 결과 / 대시보드</text>
+  <text x="1345" y="510" text-anchor="middle" class="nodeSub">탐지 결과·사유 확인</text>
+
+  <path d="M245 492 H284" stroke="#66839d" stroke-width="3" marker-end="url(#arrow)"/>
+  <path d="M448 492 H487" stroke="#66839d" stroke-width="3" marker-end="url(#arrow)"/>
+  <path d="M670 492 H710" stroke="#66839d" stroke-width="3" marker-end="url(#arrow)"/>
+  <path d="M885 492 H927" stroke="#66839d" stroke-width="3" marker-end="url(#arrow)"/>
+  <path d="M1171 492 H1211" stroke="#66839d" stroke-width="3" marker-end="url(#arrow)"/>
+  <text x="901" y="474" text-anchor="middle" class="small muted">로그 조회</text>
+
+  <path d="M583 539 V637 H660" fill="none" stroke="#1196ad" stroke-width="3" marker-end="url(#arrow)"/>
+  <path d="M1053 560 V637 H1014" fill="none" stroke="#1196ad" stroke-width="3" marker-end="url(#arrow)"/>
+  <rect x="661" y="600" width="353" height="77" rx="16" fill="#e5f4f7" stroke="#8fc7d2" stroke-width="2"/>
+  <text x="837" y="632" text-anchor="middle" class="nodeTitle">Prometheus</text>
+  <text x="837" y="658" text-anchor="middle" class="nodeSub">서비스·분석기 메트릭 수집</text>
+  <path d="M1014 638 H1116" stroke="#66839d" stroke-width="3" marker-end="url(#arrow)"/>
+  <rect x="1125" y="600" width="230" height="77" rx="16" fill="#f2ecfb" stroke="#c9b9e2" stroke-width="2"/>
+  <text x="1240" y="632" text-anchor="middle" class="nodeTitle">Grafana</text>
+  <text x="1240" y="658" text-anchor="middle" class="nodeSub">모니터링 지표 시각화</text>
+  <text x="1410" y="645" class="small muted">분석 대시보드와 별도 화면</text>
+
+  <text x="68" y="852" class="heading">초기 성능평가</text>
+  <text x="68" y="883" class="small muted">2026.10.27 · analyzer v16 실시간 API 평가 · 분석 창 60초</text>
+
+  <rect x="68" y="909" width="970" height="222" rx="20" fill="#fff" stroke="#d9e4ee" stroke-width="2"/>
+  <text x="100" y="951" class="label">탐지 비율 (실행 횟수 기준)</text>
+  <text x="561" y="951" text-anchor="middle" class="small muted">0%</text>
+  <text x="934" y="951" text-anchor="middle" class="small muted">100%</text>
+  <path d="M580 966 V1107 M937 966 V1107" stroke="#e2eaf1" stroke-width="2"/>
+  <text x="101" y="1002" class="body">정상 · 오탐</text>
+  <text x="301" y="1002" class="small muted">Isolation Forest</text>
+  <rect x="580" y="984" width="357" height="22" rx="11" fill="#edf2f6"/>
+  <circle cx="586" cy="995" r="8" fill="#087e9b"/>
+  <text x="956" y="1002" class="label cyan">0/5</text>
+  <text x="301" y="1038" class="small muted">규칙 기반</text>
+  <rect x="580" y="1020" width="357" height="22" rx="11" fill="#edf2f6"/>
+  <circle cx="586" cy="1031" r="8" fill="#bd6a12"/>
+  <text x="956" y="1038" class="label orange">0/5</text>
+  <text x="101" y="1084" class="body">Burst · 탐지</text>
+  <text x="301" y="1084" class="small muted">Isolation Forest</text>
+  <rect x="580" y="1066" width="357" height="22" rx="11" fill="#edf2f6"/>
+  <circle cx="586" cy="1077" r="8" fill="#087e9b"/>
+  <text x="956" y="1084" class="label cyan">0/3</text>
+  <text x="301" y="1120" class="small muted">규칙 기반</text>
+  <rect x="580" y="1102" width="357" height="22" rx="11" fill="#edf2f6"/>
+  <rect x="580" y="1102" width="357" height="22" rx="11" fill="#bd6a12"/>
+  <text x="956" y="1120" class="label orange">3/3</text>
+
+  <rect x="1063" y="909" width="469" height="222" rx="20" fill="#fff" stroke="#d9e4ee" stroke-width="2"/>
+  <text x="1095" y="951" class="label">평가 해석</text>
+  <circle cx="1104" cy="989" r="5" fill="#bd6a12"/>
+  <text x="1122" y="996" class="body">Burst 요청은 규칙으로</text>
+  <text x="1122" y="1024" class="body">3회 모두 탐지했습니다.</text>
+  <circle cx="1104" cy="1060" r="5" fill="#087e9b"/>
+  <text x="1122" y="1067" class="body">Isolation Forest는 이 조건에서</text>
+  <text x="1122" y="1095" class="body">Burst 탐지 개선이 필요합니다.</text>
+  <text x="1095" y="1121" class="small muted">각 조건 3~5회 반복한 초기 결과</text>
+
+  <text x="72" y="1171" class="small muted">해석 범위: 각 조건 3~5회 초기 평가이며 일반 성능을 보장하지 않습니다. 오프라인 고정 스냅샷 평가는 별도 조건으로 구분합니다.　향후: 조건 확대·모델 개선</text>
+</svg>

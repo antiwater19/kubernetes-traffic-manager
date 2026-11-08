@@ -1,0 +1,192 @@
+{
+  "snapshot_analysis_id": 112,
+  "window_started_at": "2026-10-26T18:22:52.361794+00:00",
+  "window_ended_at": "2026-10-26T18:23:52.361794+00:00",
+  "baseline_cutoff_exclusive": "2026-10-26T18:22:52.361794+00:00",
+  "baseline_days": 1,
+  "training_samples": 21,
+  "features": [
+    "request_count",
+    "error_rate",
+    "average_latency_ms",
+    "p95_latency_ms",
+    "unique_paths"
+  ],
+  "model": {
+    "name": "IsolationForest",
+    "n_estimators": 150,
+    "contamination": 0.05,
+    "random_state": 42,
+    "n_jobs": 1
+  },
+  "training_rows": [
+    {
+      "minute_bucket": 29883982,
+      "request_count": 11,
+      "error_rate": 0,
+      "average_latency_ms": 0.5427272727272728,
+      "p95_latency_ms": 0.75,
+      "unique_paths": 1
+    },
+    {
+      "minute_bucket": 29883981,
+      "request_count": 12,
+      "error_rate": 0,
+      "average_latency_ms": 0.5808333333333333,
+      "p95_latency_ms": 0.9534999999999999,
+      "unique_paths": 1
+    },
+    {
+      "minute_bucket": 29883980,
+      "request_count": 12,
+      "error_rate": 0,
+      "average_latency_ms": 0.5358333333333333,
+      "p95_latency_ms": 0.7565,
+      "unique_paths": 1
+    },
+    {
+      "minute_bucket": 29883979,
+      "request_count": 12,
+      "error_rate": 0,
+      "average_latency_ms": 0.5458333333333334,
+      "p95_latency_ms": 0.7484999999999998,
+      "unique_paths": 1
+    },
+    {
+      "minute_bucket": 29883978,
+      "request_count": 12,
+      "error_rate": 0,
+      "average_latency_ms": 0.5516666666666666,
+      "p95_latency_ms": 0.7109999999999999,
+      "unique_paths": 1
+    },
+    {
+      "minute_bucket": 29883977,
+      "request_count": 12,
+      "error_rate": 0,
+      "average_latency_ms": 0.48833333333333345,
+      "p95_latency_ms": 0.6194999999999999,
+      "unique_paths": 1
+    },
+    {
+      "minute_bucket": 29883976,
+      "request_count": 12,
+      "error_rate": 0,
+      "average_latency_ms": 0.5291666666666667,
+      "p95_latency_ms": 0.6994999999999999,
+      "unique_paths": 1
+    },
+    {
+      "minute_bucket": 29883975,
+      "request_count": 12,
+      "error_rate": 0,
+      "average_latency_ms": 0.4850000000000001,
+      "p95_latency_ms": 0.6334999999999998,
+      "unique_paths": 1
+    },
+    {
+      "minute_bucket": 29883974,
+      "request_count": 12,
+      "error_rate": 0,
+      "average_latency_ms": 0.5275,
+      "p95_latency_ms": 0.8704999999999996,
+      "unique_paths": 1
+    },
+    {
+      "minute_bucket": 29883973,
+      "request_count": 12,
+      "error_rate": 0,
+      "average_latency_ms": 0.5416666666666666,
+      "p95_latency_ms": 0.7864999999999999,
+      "unique_paths": 1
+    },
+    {
+      "minute_bucket": 29883972,
+      "request_count": 12,
+      "error_rate": 0,
+      "average_latency_ms": 0.5483333333333333,
+      "p95_latency_ms": 0.8999999999999996,
+      "unique_paths": 1
+    },
+    {
+      "minute_bucket": 29883971,
+      "request_count": 12,
+      "error_rate": 0,
+      "average_latency_ms": 0.4883333333333333,
+      "p95_latency_ms": 0.598,
+      "unique_paths": 1
+    },
+    {
+      "minute_bucket": 29883970,
+      "request_count": 12,
+      "error_rate": 0,
+      "average_latency_ms": 0.505,
+      "p95_latency_ms": 0.607,
+      "unique_paths": 1
+    },
+    {
+      "minute_bucket": 29883969,
+      "request_count": 12,
+      "error_rate": 0,
+      "average_latency_ms": 0.5958333333333333,
+      "p95_latency_ms": 1.1244999999999996,
+      "unique_paths": 1
+    },
+    {
+      "minute_bucket": 29883968,
+      "request_count": 12,
+      "error_rate": 0,
+      "average_latency_ms": 0.5524999999999999,
+      "p95_latency_ms": 0.7784999999999999,
+      "unique_paths": 1
+    },
+    {
+      "minute_bucket": 29883967,
+      "request_count": 12,
+      "error_rate": 0,
+      "average_latency_ms": 0.5683333333333334,
+      "p95_latency_ms": 1.0354999999999999,
+      "unique_paths": 1
+    },
+    {
+      "minute_bucket": 29883966,
+      "request_count": 12,
+      "error_rate": 0,
+      "average_latency_ms": 0.49666666666666665,
+      "p95_latency_ms": 0.6249999999999999,
+      "unique_paths": 1
+    },
+    {
+      "minute_bucket": 29883965,
+      "request_count": 12,
+      "error_rate": 0,
+      "average_latency_ms": 0.49499999999999994,
+      "p95_latency_ms": 0.6159999999999999,
+      "unique_paths": 1
+    },
+    {
+      "minute_bucket": 29883964,
+      "request_count": 12,
+      "error_rate": 0,
+      "average_latency_ms": 0.5175,
+      "p95_latency_ms": 0.658,
+      "unique_paths": 1
+    },
+    {
+      "minute_bucket": 29883963,
+      "request_count": 12,
+      "error_rate": 0,
+      "average_latency_ms": 0.5683333333333332,
+      "p95_latency_ms": 0.8684999999999998,
+      "unique_paths": 1
+    },
+    {
+      "minute_bucket": 29883962,
+      "request_count": 2,
+      "error_rate": 0,
+      "average_latency_ms": 9.305,
+      "p95_latency_ms": 9.5615,
+      "unique_paths": 1
+    }
+  ]
+}

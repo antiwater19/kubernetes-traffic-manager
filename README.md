@@ -130,17 +130,20 @@ helm upgrade --install traffic-monitoring prometheus-community/kube-prometheus-s
 kubectl apply -f k8s/monitoring/prometheus.yaml
 kubectl apply -f k8s/security/monitoring-network-policy.yaml
 
+# Grafana Smart Traffic 대시보드 등록 (Grafana sidecar가 ConfigMap을 자동 감지)
+kubectl apply -n monitoring -k k8s/monitoring/dashboard
+
 # 모니터링 Pod 준비 확인
 kubectl get pods -n monitoring
 ```
 
-앱 코드를 바꾼 뒤에는 새 이미지 버전을 빌드해 Docker Hub에 올린 다음 배포를 갱신합니다. 현재 배포 버전은 test app `v8`, analyzer `v16`입니다. Isolation Forest는 과거 정상 기준선만으로 학습하고 최근 트래픽을 고정된 모델로 점수화합니다.
+앱 코드를 바꾼 뒤에는 새 이미지 버전을 빌드해 Docker Hub에 올린 다음 배포를 갱신합니다. 현재 배포 버전은 test app `v8`, analyzer `v17`입니다. Isolation Forest는 과거 정상 기준선만으로 학습하고 최근 트래픽을 고정된 모델로 점수화합니다.
 
 ```powershell
 docker build -t antiwater19/test-web-app:v8 ./app-testing
-docker build -t antiwater19/traffic-analyzer:v16 ./analyzer
+docker build -t antiwater19/traffic-analyzer:v17 ./analyzer
 docker push antiwater19/test-web-app:v8
-docker push antiwater19/traffic-analyzer:v16
+docker push antiwater19/traffic-analyzer:v17
 kubectl apply -f k8s/app/deployment.yaml
 kubectl apply -f k8s/analyzer/deployment.yaml
 kubectl rollout status deployment/test-web-app -n smart-traffic
@@ -150,9 +153,10 @@ kubectl rollout status deployment/traffic-analyzer -n smart-traffic
 Grafana와 Prometheus는 Ingress로 외부에 공개하지 않고 로컬 포트포워딩으로 접속합니다.
 
 ```powershell
-# 각 명령은 별도의 터미널에서 실행
+# 설정과 메트릭 수집은 클러스터에서 계속 동작합니다. 아래 포트포워딩은
+# 내 PC 브라우저에서 Grafana/Prometheus 화면을 열 때만 별도 터미널에서 실행합니다.
 kubectl port-forward -n monitoring svc/traffic-monitoring-grafana 3000:80
-kubectl port-forward -n monitoring svc/traffic-monitoring-kube-prometheus-prometheus 9090:9090
+kubectl port-forward -n monitoring svc/traffic-monitoring-kube-pr-prometheus 9090:9090
 
 # Grafana 비밀번호 확인 (기본 사용자: admin)
 [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String((kubectl get secret -n monitoring traffic-monitoring-grafana -o jsonpath='{.data.admin-password}')))
@@ -160,6 +164,8 @@ kubectl port-forward -n monitoring svc/traffic-monitoring-kube-prometheus-promet
 
 - Grafana: <http://localhost:3000>
 - Prometheus: <http://localhost:9090/targets>
+- Grafana에서 **Dashboards → Smart Traffic Overview**를 열면 test app 요청률·경로별 요청량·p95 지연·5xx 오류 비율, test app/analyzer/DB Pod별 CPU·메모리 사용량, Deployment 준비 Replica 수를 확인할 수 있습니다.
+- 앱 요청 메트릭은 `/metrics` ServiceMonitor로 15초마다 수집하고, Pod CPU·메모리는 kubelet/cAdvisor, Replica 상태는 kube-state-metrics에서 가져옵니다. Grafana 화면 포트포워딩을 끄더라도 Prometheus 수집과 저장은 클러스터에서 계속됩니다.
 
 ### 트래픽 로그 확인
 ```bash
@@ -194,6 +200,8 @@ IP별 60초 집계(요청 수, 오류율, 평균/p95 응답 시간, 경로 수)�
 분석 요청은 NetworkPolicy를 자동 변경하지 않습니다.
 
 기존 정상·이상 시나리오의 Isolation Forest 초기 오탐률과 탐지율은 [평가 기록](GuideBook/탐지율_초기평가.md)을 참고하세요. 이 수치는 저장된 과거 분석 결과에서 계산한 초기 비교입니다.
+
+eBPF 기반 네트워크 관측기(Hubble)와 런타임 보안 탐지기(Falco)의 도입 적합성 및 사전 검증 결과는 [eBPF 수집기 검증 기록](GuideBook/ebpf_collector_validation.md)을 참고하세요. 현재 개발 클러스터의 CNI 변경 전에 별도 테스트 클러스터에서 검증하도록 정리했습니다.
 
 ### k6 트래픽 수집 및 이상 탐지 검증
 k6는 프로필별로 실행해 정상 기준선과 이상 시나리오를 분리합니다.
