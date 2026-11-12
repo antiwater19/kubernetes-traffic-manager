@@ -1,4 +1,4 @@
-const state = { windowSeconds: 60, summary: null, refreshTimer: null };
+const state = { windowSeconds: 60, summary: null, policies: [], refreshTimer: null };
 const numberFormat = new Intl.NumberFormat('ko-KR');
 const timeFormat = new Intl.DateTimeFormat('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 const shortTimeFormat = new Intl.DateTimeFormat('ko-KR', { hour: '2-digit', minute: '2-digit' });
@@ -91,7 +91,7 @@ function renderClients(data) {
   if (!clients.length) {
     const row = body.insertRow();
     const cell = setCell(row, '선택한 시간 구간에 요청이 없습니다.', 'empty-cell');
-    cell.colSpan = 5;
+    cell.colSpan = 6;
     return;
   }
   const findings = new Map((data.findings || []).map(item => [item.client_ip, item]));
@@ -111,6 +111,50 @@ function renderClients(data) {
       : detection.model ? '모델' : detection.rules ? '규칙' : '정상';
     stateCell.appendChild(badge);
     row.appendChild(stateCell);
+    const policy = state.policies.find(item => item.client_ip === client.client_ip);
+    const actions = document.createElement('td');
+    actions.className = 'policy-actions';
+    actions.appendChild(makeActionButton(policy?.is_blocked ? '차단 해제' : '차단', policy?.is_blocked ? 'unblock' : 'block', client.client_ip));
+    actions.appendChild(makeActionButton(policy?.rate_limit_max_requests ? '제한 변경' : '요청 제한', 'set-limit', client.client_ip));
+    row.appendChild(actions);
+  });
+}
+
+function makeActionButton(label, action, clientIp) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = `small-action ${action === 'unblock' ? 'secondary' : ''}`;
+  button.dataset.action = action;
+  button.dataset.ip = clientIp;
+  button.textContent = label;
+  return button;
+}
+
+function renderPolicies() {
+  const body = document.getElementById('policy-rows');
+  body.replaceChildren();
+  document.getElementById('policy-count').textContent = `${numberFormat.format(state.policies.length)} policies`;
+  if (!state.policies.length) {
+    const row = body.insertRow();
+    const cell = setCell(row, '등록된 IP 정책이 없습니다. 클라이언트 분석에서 IP를 선택해 설정하세요.', 'empty-cell');
+    cell.colSpan = 5;
+    return;
+  }
+  state.policies.forEach(policy => {
+    const row = body.insertRow();
+    setCell(row, policy.client_ip, 'ip-cell');
+    const status = setCell(row, policy.is_blocked ? '차단됨' : '허용', 'policy-status');
+    status.classList.add(policy.is_blocked ? 'blocked' : 'allowed');
+    const limit = policy.rate_limit_max_requests
+      ? `${numberFormat.format(policy.rate_limit_max_requests)}회 / ${formatWindow(policy.rate_limit_window_seconds)}`
+      : '제한 없음';
+    setCell(row, limit, 'number-cell');
+    setCell(row, policy.block_reason || '—');
+    const actions = document.createElement('td');
+    actions.className = 'policy-actions';
+    actions.appendChild(makeActionButton(policy.is_blocked ? '차단 해제' : '차단', policy.is_blocked ? 'unblock' : 'block', policy.client_ip));
+    actions.appendChild(makeActionButton(policy.rate_limit_max_requests ? '제한 해제' : '요청 제한', policy.rate_limit_max_requests ? 'clear-limit' : 'set-limit', policy.client_ip));
+    row.appendChild(actions);
   });
 }
 
@@ -300,6 +344,67 @@ async function loadHistory() {
   });
 }
 
+async function loadPolicies() {
+  const response = await fetch('/ip-policies', { cache: 'no-store' });
+  if (!response.ok) throw new Error(`IP 정책 조회 실패 (${response.status})`);
+  state.policies = await response.json();
+  renderPolicies();
+  if (state.summary) renderClients(state.summary);
+}
+
+async function savePolicy(path, body) {
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    let message = `정책 변경 실패 (${response.status})`;
+    try { message = (await response.json()).detail || message; } catch (_) {}
+    throw new Error(message);
+  }
+  await loadPolicies();
+  showToast('IP 정책을 저장했습니다.');
+}
+
+async function handlePolicyAction(event) {
+  const button = event.target.closest('button[data-action]');
+  if (!button) return;
+  const clientIp = button.dataset.ip;
+  try {
+    if (button.dataset.action === 'block') {
+      const reason = window.prompt(`${clientIp} 차단 사유`, '이상 트래픽 확인');
+      if (reason === null) return;
+      const hoursInput = window.prompt('차단 시간(시간)을 입력하세요. 비우면 수동 해제 전까지 차단합니다.', '1');
+      if (hoursInput === null) return;
+      const durationSeconds = hoursInput.trim() ? Number(hoursInput) * 3600 : null;
+      if (durationSeconds !== null && (!Number.isInteger(durationSeconds) || durationSeconds < 3600 || durationSeconds > 2_592_000)) {
+        throw new Error('차단 시간은 1시간에서 720시간 사이로 입력하세요.');
+      }
+      await savePolicy('/ip-policies/block', { client_ip: clientIp, reason, duration_seconds: durationSeconds });
+    } else if (button.dataset.action === 'unblock') {
+      if (!window.confirm(`${clientIp} 차단을 해제할까요?`)) return;
+      await savePolicy('/ip-policies/unblock', { client_ip: clientIp });
+    } else if (button.dataset.action === 'set-limit') {
+      const maxInput = window.prompt(`${clientIp}의 구간당 최대 요청 수`, '30');
+      if (maxInput === null) return;
+      const windowInput = window.prompt('구간 길이(초)', '60');
+      if (windowInput === null) return;
+      const maxRequests = Number(maxInput);
+      const windowSeconds = Number(windowInput);
+      if (!Number.isInteger(maxRequests) || maxRequests < 1 || maxRequests > 100000 || !Number.isInteger(windowSeconds) || windowSeconds < 1 || windowSeconds > 86400) {
+        throw new Error('요청 수는 1~100000, 구간은 1~86400초로 입력하세요.');
+      }
+      await savePolicy('/ip-policies/rate-limit', { client_ip: clientIp, max_requests: maxRequests, window_seconds: windowSeconds });
+    } else if (button.dataset.action === 'clear-limit') {
+      if (!window.confirm(`${clientIp}의 요청 제한을 해제할까요?`)) return;
+      await savePolicy('/ip-policies/rate-limit/clear', { client_ip: clientIp });
+    }
+  } catch (error) {
+    showToast(error.message || 'IP 정책을 변경하지 못했습니다.');
+  }
+}
+
 async function runAnalysis() {
   const button = document.getElementById('analyze-button');
   button.disabled = true;
@@ -320,7 +425,7 @@ async function runAnalysis() {
 
 async function refreshAll() {
   try {
-    await Promise.all([loadSummary(), loadHistory()]);
+    await Promise.all([loadSummary(), loadHistory(), loadPolicies()]);
   } catch (error) {
     showToast(error.message || '대시보드 데이터를 불러오지 못했습니다.');
   }
@@ -332,7 +437,9 @@ document.getElementById('window-select').addEventListener('change', event => {
 });
 document.getElementById('analyze-button').addEventListener('click', runAnalysis);
 document.getElementById('refresh-history').addEventListener('click', () => loadHistory().catch(error => showToast(error.message)));
+document.getElementById('client-rows').addEventListener('click', handlePolicyAction);
+document.getElementById('policy-rows').addEventListener('click', handlePolicyAction);
 window.addEventListener('resize', () => { if (state.summary) renderSummary(state.summary); });
 window.addEventListener('themechange', () => { if (state.summary) renderSummary(state.summary); });
 refreshAll();
-state.refreshTimer = window.setInterval(() => loadSummary().catch(() => {}), 5000);
+state.refreshTimer = window.setInterval(() => Promise.all([loadSummary(), loadPolicies()]).catch(() => {}), 5000);

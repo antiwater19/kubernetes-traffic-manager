@@ -106,4 +106,22 @@ html[data-theme="dark"] .guide-footer a,html[data-theme="dark"] .guide-back { co
 .theme-toggle:hover { background:#f7f9ff;border-color:#cbd5f8;color:#536ddd; }
 .theme-icon { font-size:13px;line-height:1; }
 .guide-top-actions { display:flex;align-items:center;gap:15px; }
+.policy-panel { margin-top:14px;padding:17px 18px; }
+.policy-note { margin:10px 0 0;color:#8d99aa;font-size:10px;line-height:1.6; }
+.policy-actions { display:flex;gap:6px; }
+.small-action { min-height:27px;padding:0 8px;border:1px solid #f0d6d8;border-radius:6px;background:#fff6f6;color:#c44e59;font-size:9px;font-weight:700;cursor:pointer; }
+.small-action:hover { background:#ffecee; }
+.small-action.secondary { border-color:#dce8e4;background:#f1faf6;color:#25866d; }
+.small-action.secondary:hover { background:#e5f6ef; }
+.policy-status { font-size:10px;font-weight:700; }
+.policy-status.blocked { color:#d65762; }
+.policy-status.allowed { color:#179a73; }
+html[data-theme="dark"] .policy-note { color:#aab8cc; }
+html[data-theme="dark"] .small-action { border-color:#54323a;background:#2c1d24;color:#ff9ca5; }
+html[data-theme="dark"] .small-action:hover { background:#3d252d; }
+html[data-theme="dark"] .small-action.secondary { border-color:#285344;background:#19372f;color:#73dfb9; }
+html[data-theme="dark"] .small-action.secondary:hover { background:#20483d; }
+html[data-theme="dark"] .policy-status.blocked { color:#ff9ca5; }
+html[data-theme="dark"] .policy-status.allowed { color:#73dfb9; }
+@media (max-width:700px) { .policy-panel { margin-top:9px;padding:14px 11px; }.policy-actions { gap:4px; }.small-action { padding:0 6px;font-size:8px; } }
 @media (max-width:700px) { .theme-toggle { min-height:28px;padding:0 8px; }.topbar-right .theme-label { display:none; }.guide-top-actions { gap:8px; }.guide-top-actions .theme-label { display:none; } }

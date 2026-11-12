@@ -3,14 +3,17 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from prometheus_fastapi_instrumentator import Instrumentator
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import SQLAlchemyError
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+import ipaddress
 import logging
+import os
 import time
 import random
-from database import RequestLog, SessionLocal, init_db
+from database import IPRateWindow, IPPolicy, RequestLog, SessionLocal, init_db
 
 # FastAPI 애플리케이션 생성
 app = FastAPI()
@@ -18,6 +21,77 @@ Instrumentator(
     should_ignore_untemplated=True,
     excluded_handlers=["/metrics"],
 ).instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
+
+TRUSTED_PROXY_CIDRS = tuple(
+    ipaddress.ip_network(value.strip(), strict=False)
+    for value in os.getenv("TRUSTED_PROXY_CIDRS", "").split(",")
+    if value.strip()
+)
+_last_rate_window_cleanup = 0.0
+
+
+def get_client_ip(request: Request) -> str:
+    """Use forwarded addresses only when the immediate peer is a trusted proxy."""
+    peer = request.client.host if request.client else "unknown"
+    try:
+        peer_ip = ipaddress.ip_address(peer)
+    except ValueError:
+        return peer
+    if not any(peer_ip in network for network in TRUSTED_PROXY_CIDRS):
+        return peer_ip.compressed
+
+    forwarded = request.headers.get("x-forwarded-for", "")
+    chain = []
+    for value in forwarded.split(","):
+        try:
+            chain.append(ipaddress.ip_address(value.strip()))
+        except ValueError:
+            continue
+    chain.append(peer_ip)
+    while len(chain) > 1 and any(chain[-1] in network for network in TRUSTED_PROXY_CIDRS):
+        chain.pop()
+    return chain[-1].compressed
+
+
+def check_client_policy(client_ip: str) -> tuple[int | None, int | None]:
+    """Return (403, None) for a ban or (429, retry seconds) when limited."""
+    global _last_rate_window_cleanup
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as session:
+        policy = session.get(IPPolicy, client_ip)
+        if policy and policy.is_blocked:
+            if policy.blocked_until is None or policy.blocked_until > now:
+                return 403, None
+            policy.is_blocked = False
+            session.commit()
+
+        if not policy or not policy.rate_limit_max_requests or not policy.rate_limit_window_seconds:
+            return None, None
+
+        window_seconds = policy.rate_limit_window_seconds
+        window_epoch = int(now.timestamp()) // window_seconds * window_seconds
+        window_started_at = datetime.fromtimestamp(window_epoch, tz=timezone.utc)
+        statement = pg_insert(IPRateWindow).values(
+            client_ip=client_ip,
+            window_seconds=window_seconds,
+            window_started_at=window_started_at,
+            request_count=1,
+        ).on_conflict_do_update(
+            constraint="uq_ip_rate_windows_client_window",
+            set_={"request_count": IPRateWindow.request_count + 1},
+        ).returning(IPRateWindow.request_count)
+        request_count = session.scalar(statement)
+        if time.monotonic() - _last_rate_window_cleanup > 3600:
+            session.execute(delete(IPRateWindow).where(
+                IPRateWindow.window_started_at < now - timedelta(hours=24)
+            ))
+            _last_rate_window_cleanup = time.monotonic()
+        session.commit()
+        if request_count > policy.rate_limit_max_requests:
+            window_end = window_epoch + window_seconds
+            retry_after = max(1, window_end - int(now.timestamp()))
+            return 429, retry_after
+    return None, None
 
 
 @app.on_event("startup")
@@ -34,15 +108,30 @@ async def record_traffic(request: Request, call_next):
 
     started_at = time.perf_counter()
     status_code = 500
+    client_ip = get_client_ip(request)
     try:
-        response = await call_next(request)
+        try:
+            policy_status, retry_after = check_client_policy(client_ip)
+        except SQLAlchemyError:
+            logging.exception("[POLICY] Failed to check IP policy")
+            response = JSONResponse(
+                status_code=503,
+                content={"detail": "IP policy storage is unavailable"},
+            )
+        else:
+            if policy_status == 403:
+                response = JSONResponse(status_code=403, content={"detail": "IP address is blocked"})
+            elif policy_status == 429:
+                response = JSONResponse(
+                    status_code=429,
+                    content={"detail": "Per-IP request limit exceeded"},
+                    headers={"Retry-After": str(retry_after)},
+                )
+            else:
+                response = await call_next(request)
         status_code = response.status_code
         return response
     finally:
-        forwarded_for = request.headers.get("x-forwarded-for", "")
-        client_ip = forwarded_for.split(",", 1)[0].strip() or (
-            request.client.host if request.client else "unknown"
-        )
         latency_ms = round((time.perf_counter() - started_at) * 1000, 2)
         scenario = request.headers.get("x-traffic-scenario", "").strip().lower()
         if scenario not in {"normal", "burst", "slow", "error"}:
@@ -108,7 +197,7 @@ templates = Jinja2Templates(directory="templates")
 # ==========================================================
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
-    client_ip = request.client.host
+    client_ip = get_client_ip(request)
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     # 요청 횟수 증가
@@ -138,7 +227,7 @@ async def root(request: Request):
 # ==========================================================
 @app.get("/api")
 async def api_root(request: Request):
-    client_ip = request.client.host
+    client_ip = get_client_ip(request)
     now = datetime.now().strftime("%H:%M:%S")
 
     request_count[client_ip] = request_count.get(client_ip, 0) + 1
@@ -163,7 +252,7 @@ async def api_root(request: Request):
 # ==========================================================
 @app.get("/slow")
 async def slow(request: Request):
-    client_ip = request.client.host
+    client_ip = get_client_ip(request)
 
     # 2초 지연
     time.sleep(2)
@@ -184,7 +273,7 @@ async def slow(request: Request):
 # ==========================================================
 @app.get("/error")
 async def error(request: Request):
-    client_ip = request.client.host
+    client_ip = get_client_ip(request)
 
     # 50% 확률로 에러 발생
     if random.random() < 0.5:
@@ -211,7 +300,7 @@ async def error(request: Request):
 # ==========================================================
 @app.get("/burst")
 async def burst(request: Request):
-    client_ip = request.client.host
+    client_ip = get_client_ip(request)
 
     # CPU 연산 유도
     for _ in range(1000):

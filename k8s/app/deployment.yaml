@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: test-web-app
-          image: antiwater19/test-web-app:v8
+          image: antiwater19/test-web-app:v9
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
@@ -27,6 +27,8 @@ spec:
                 secretKeyRef:
                   name: traffic-db-secret
                   key: DATABASE_URL
+            - name: TRUSTED_PROXY_CIDRS
+              value: "10.1.2.114/32"
           resources:
             requests:
               cpu: "100m"

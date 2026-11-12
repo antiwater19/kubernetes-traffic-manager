@@ -94,7 +94,7 @@
       <section class="content-grid">
         <article class="panel" id="clients">
           <div class="panel-heading"><div><h2>클라이언트 분석</h2><p>IP별 요청 및 응답 특성</p></div><span class="subtle-count" id="client-count">0 clients</span></div>
-          <div class="table-scroll"><table><thead><tr><th>클라이언트 IP</th><th>요청</th><th>오류율</th><th>평균 지연</th><th>상태</th></tr></thead><tbody id="client-rows"><tr><td colspan="5" class="empty-cell">데이터를 불러오는 중입니다.</td></tr></tbody></table></div>
+          <div class="table-scroll"><table><thead><tr><th>클라이언트 IP</th><th>요청</th><th>오류율</th><th>평균 지연</th><th>상태</th><th>정책</th></tr></thead><tbody id="client-rows"><tr><td colspan="6" class="empty-cell">데이터를 불러오는 중입니다.</td></tr></tbody></table></div>
         </article>
         <article class="panel findings-panel">
           <div class="panel-heading"><div><h2>이상 징후</h2><p>현재 구간의 탐지 결과와 근거</p></div><span class="status-pill neutral" id="overall-status">확인 중</span></div>
@@ -110,6 +110,12 @@
             </div>
           </div>
         </article>
+      </section>
+
+      <section class="panel policy-panel" id="ip-policies">
+        <div class="panel-heading"><div><h2>IP 정책 관리</h2><p>차단, 차단 해제, IP별 고정 구간 요청 제한</p></div><span class="subtle-count" id="policy-count">0 policies</span></div>
+        <div class="table-scroll"><table><thead><tr><th>클라이언트 IP</th><th>차단 상태</th><th>요청 제한</th><th>차단 사유</th><th>작업</th></tr></thead><tbody id="policy-rows"><tr><td colspan="5" class="empty-cell">정책을 불러오는 중입니다.</td></tr></tbody></table></div>
+        <p class="policy-note">요청 제한은 설정한 초 단위의 고정 구간마다 적용됩니다. 예: 10회 / 60초. 적용은 테스트 웹앱에서 수행됩니다.</p>
       </section>
 
       <section class="panel history-panel" id="history">

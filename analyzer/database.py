@@ -6,6 +6,7 @@ from sqlalchemy import (
     Float,
     Integer,
     String,
+    UniqueConstraint,
     create_engine,
     func,
     text,
@@ -40,6 +41,41 @@ class RequestLog(Base):
     user_agent: Mapped[str] = mapped_column(String(512))
     scenario: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[object] = mapped_column(DateTime(timezone=True))
+
+
+class IPPolicy(Base):
+    """Shared policy table written by the analyzer and enforced by the app."""
+
+    __tablename__ = "ip_policies"
+
+    client_ip: Mapped[str] = mapped_column(String(45), primary_key=True)
+    is_blocked: Mapped[bool] = mapped_column(default=False, server_default="false")
+    block_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    blocked_at: Mapped[object | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    blocked_until: Mapped[object | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    rate_limit_max_requests: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rate_limit_window_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[object] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class IPRateWindow(Base):
+    """Shared fixed-window counters incremented atomically by app replicas."""
+
+    __tablename__ = "ip_rate_windows"
+    __table_args__ = (
+        UniqueConstraint(
+            "client_ip", "window_seconds", "window_started_at",
+            name="uq_ip_rate_windows_client_window",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    client_ip: Mapped[str] = mapped_column(String(45), index=True)
+    window_seconds: Mapped[int] = mapped_column(Integer)
+    window_started_at: Mapped[object] = mapped_column(DateTime(timezone=True))
+    request_count: Mapped[int] = mapped_column(Integer, default=1)
 
 
 class AnalysisResult(Base):

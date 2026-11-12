@@ -137,13 +137,13 @@ kubectl apply -n monitoring -k k8s/monitoring/dashboard
 kubectl get pods -n monitoring
 ```
 
-앱 코드를 바꾼 뒤에는 새 이미지 버전을 빌드해 Docker Hub에 올린 다음 배포를 갱신합니다. 현재 배포 버전은 test app `v8`, analyzer `v17`입니다. Isolation Forest는 과거 정상 기준선만으로 학습하고 최근 트래픽을 고정된 모델로 점수화합니다.
+앱 코드를 바꾼 뒤에는 새 이미지 버전을 빌드해 Docker Hub에 올린 다음 배포를 갱신합니다. 현재 배포 버전은 test app `v9`, analyzer `v18`입니다. Isolation Forest는 과거 정상 기준선만으로 학습하고 최근 트래픽을 고정된 모델로 점수화합니다.
 
 ```powershell
-docker build -t antiwater19/test-web-app:v8 ./app-testing
-docker build -t antiwater19/traffic-analyzer:v17 ./analyzer
-docker push antiwater19/test-web-app:v8
-docker push antiwater19/traffic-analyzer:v17
+docker build -t antiwater19/test-web-app:v9 ./app-testing
+docker build -t antiwater19/traffic-analyzer:v18 ./analyzer
+docker push antiwater19/test-web-app:v9
+docker push antiwater19/traffic-analyzer:v18
 kubectl apply -f k8s/app/deployment.yaml
 kubectl apply -f k8s/analyzer/deployment.yaml
 kubectl rollout status deployment/test-web-app -n smart-traffic
@@ -202,6 +202,31 @@ IP별 60초 집계(요청 수, 오류율, 평균/p95 응답 시간, 경로 수)�
 기존 정상·이상 시나리오의 Isolation Forest 초기 오탐률과 탐지율은 [평가 기록](GuideBook/탐지율_초기평가.md)을 참고하세요. 이 수치는 저장된 과거 분석 결과에서 계산한 초기 비교입니다.
 
 eBPF 기반 네트워크 관측기(Hubble)와 런타임 보안 탐지기(Falco)의 도입 적합성 및 사전 검증 결과는 [eBPF 수집기 검증 기록](GuideBook/ebpf_collector_validation.md)을 참고하세요. 현재 개발 클러스터의 CNI 변경 전에 별도 테스트 클러스터에서 검증하도록 정리했습니다.
+
+격리된 `kind-cilium-validation` 클러스터에서 실제 test app↔PostgreSQL 흐름을 시연하려면 아래 명령을 실행합니다. Docker Desktop의 주 `docker-desktop` 클러스터는 변경하지 않습니다.
+
+```powershell
+kind load docker-image antiwater19/test-web-app:v9 postgres:16-alpine --name cilium-validation
+kubectl --context kind-cilium-validation apply -f k8s/namespace.yaml
+kubectl --context kind-cilium-validation apply -f k8s/app/database.yaml
+kubectl --context kind-cilium-validation apply -f k8s/app/service.yaml
+kubectl --context kind-cilium-validation apply -f k8s/app/deployment.yaml
+kubectl --context kind-cilium-validation rollout status deployment/traffic-db -n smart-traffic --timeout=2m
+kubectl --context kind-cilium-validation rollout status deployment/test-web-app -n smart-traffic --timeout=3m
+kubectl --context kind-cilium-validation apply -f k8s/ebpf-validation/smart-traffic-demo.yaml
+```
+
+이 구성은 2초마다 test app의 `/api`를 요청하고, app이 PostgreSQL에 로그를 저장합니다. Hubble UI는 별도 PowerShell에서 다음처럼 열고 <http://localhost:12000>에 접속합니다.
+
+```powershell
+kubectl --context kind-cilium-validation port-forward -n kube-system svc/hubble-ui 12000:80
+```
+
+Hubble UI에서 `smart-traffic` 네임스페이스를 선택해 `smart-traffic-demo-client → test-web-app → traffic-db` 흐름을 확인합니다. 시연을 마치면 트래픽 생성을 멈춥니다. Hubble UI 터널도 닫으려면 포트포워딩 터미널에서 `Ctrl+C`를 누릅니다.
+
+```powershell
+kubectl --context kind-cilium-validation delete -f k8s/ebpf-validation/smart-traffic-demo.yaml
+```
 
 ### k6 트래픽 수집 및 이상 탐지 검증
 k6는 프로필별로 실행해 정상 기준선과 이상 시나리오를 분리합니다.
@@ -263,6 +288,29 @@ kubectl port-forward -n smart-traffic svc/traffic-analyzer-service 9000:9000
 대시보드의 **분석 가이드** 버튼 또는 [http://localhost:9000/guide](http://localhost:9000/guide)에서 데이터 흐름, 탐지 방식, Isolation Forest 기준선 수집, k6 프로필과 API 사용법을 확인할 수 있습니다.
 대시보드와 가이드 상단의 테마 버튼으로 다크 모드와 라이트 모드를 전환할 수 있으며, 선택은 브라우저에 저장됩니다.
 대시보드를 닫을 때는 포트포워딩 중인 터미널에서 `Ctrl+C`를 누르세요.
+
+### IP 차단 및 IP별 요청 제한 (MVP)
+대시보드의 **클라이언트 분석** 표에서 IP별로 차단 또는 요청 제한을 설정하고, **IP 정책 관리** 표에서 저장된 정책을 확인·해제할 수 있습니다. 차단은 설정 시간(1~720시간)이 지나면 자동 해제되며, 시간을 비우면 수동 해제할 때까지 유지됩니다. 요청 제한은 초 단위 고정 구간으로 적용합니다. 예를 들어 `30회 / 60초`는 해당 IP의 60초 구간에서 30회를 초과한 요청에 HTTP 429와 `Retry-After`를 돌려줍니다. 차단된 요청은 HTTP 403을 반환합니다.
+
+정책과 요청 카운터는 PostgreSQL에 저장되므로 앱 Pod가 여러 개여도 제한 카운터를 공유합니다. 이 MVP는 테스트 웹앱에서 요청을 거부하는 애플리케이션 계층 제어이며, Kubernetes 네트워크 패킷 자체를 차단하지는 않습니다. 따라서 외부 공개 전에 대시보드/API 인증을 추가하고, 프록시 뒤에서 실제 클라이언트 IP를 보존하도록 설정해야 합니다. 앱은 직접 연결의 peer IP를 사용하고, `X-Forwarded-For`는 `TRUSTED_PROXY_CIDRS`에 등록한 프록시에서 온 경우에만 사용합니다. 현재 Docker Desktop Ingress Pod 주소 `10.1.2.114/32`를 배포 설정에 등록했습니다. Ingress Pod가 교체되어 주소가 바뀌면 `kubectl get pods -n ingress-nginx -o wide`로 새 주소를 확인해 `k8s/app/deployment.yaml`의 값을 갱신하세요.
+
+정책 API는 analyzer 포트포워딩 후 사용할 수 있습니다.
+
+```powershell
+# 정책 목록
+curl.exe http://localhost:9000/ip-policies
+# IP 영구 차단 (duration_seconds 생략)
+curl.exe -X POST http://localhost:9000/ip-policies/block -H "Content-Type: application/json" -d '{"client_ip":"192.0.2.25","reason":"비정상 요청"}'
+# IP 1시간 차단
+curl.exe -X POST http://localhost:9000/ip-policies/block -H "Content-Type: application/json" -d '{"client_ip":"192.0.2.25","reason":"시연 차단","duration_seconds":3600}'
+# 차단 해제
+curl.exe -X POST http://localhost:9000/ip-policies/unblock -H "Content-Type: application/json" -d '{"client_ip":"192.0.2.25"}'
+# 분당 30회로 제한 / 제한 해제
+curl.exe -X POST http://localhost:9000/ip-policies/rate-limit -H "Content-Type: application/json" -d '{"client_ip":"192.0.2.25","max_requests":30,"window_seconds":60}'
+curl.exe -X POST http://localhost:9000/ip-policies/rate-limit/clear -H "Content-Type: application/json" -d '{"client_ip":"192.0.2.25"}'
+```
+
+현재 배포에 쓰인 이미지는 Docker Hub의 `antiwater19/test-web-app:v9`, `antiwater19/traffic-analyzer:v18`입니다.
 
 접속되지 않으면 다른 프로그램이 9000 포트를 사용 중인지 확인한 뒤, 예를 들어 로컬 포트만 9001로 바꿔 실행하고 `http://localhost:9001/dashboard`로 접속할 수 있습니다.
 ```powershell

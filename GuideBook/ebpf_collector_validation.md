@@ -66,7 +66,15 @@ Helm으로 Cilium 1.20.4와 Hubble Relay/UI를 설치했다. Cilium agent 1/1, H
 
 [traffic.yaml](../k8s/ebpf-validation/traffic.yaml)의 격리된 HTTP 서버/클라이언트가 Service DNS로 2초 간격 요청을 보냈다. Hubble Relay에 연결한 CLI 결과는 `Healthcheck: Ok`, `Connected Nodes: 1/1`, 약 `12.8 flows/s`였고, `flow-client → flow-server:8080`의 TCP SYN/ACK, 데이터 전송 및 종료 흐름과 CoreDNS 질의를 관측했다. 따라서 **현재 WSL2/Docker Desktop 기반 로컬 커널에서 Cilium eBPF 기반 L3/L4 flow 수집과 Hubble 조회가 동작함을 확인**했다.
 
-이번 확인은 L3/L4 흐름 관측까지다. Hubble에서 HTTP 메서드/URL 등 L7 필드가 나오는지와 L7 정책 영향을 검증하지 않았고, 실제 `smart-traffic` 앱/DB 연계도 하지 않았다. 따라서 현 개발 클러스터로 CNI를 옮길 근거가 아니라, 별도 클러스터에서 기본 기능이 동작한다는 검증이다.
+이번 초기 확인은 L3/L4 흐름 관측까지였다. Hubble에서 HTTP 메서드/URL 등 L7 필드가 나오는지와 L7 정책 영향은 검증하지 않았다. 따라서 현 개발 클러스터로 CNI를 옮길 근거가 아니라, 별도 클러스터에서 기본 기능이 동작한다는 검증이다.
+
+## 실제 test app 흐름 시연 구성 (2026-11-11)
+
+주 개발 클러스터의 CNI를 변경하지 않고, 같은 `kind-cilium-validation` 클러스터에 프로젝트의 `test-web-app:v8`과 PostgreSQL을 별도 `smart-traffic` 네임스페이스로 배포했다. `smart-traffic-demo-client`는 2초 간격으로 `/api`를 호출한다. app 2개, PostgreSQL 1개, demo client 1개가 모두 Ready가 됐고, 앱 로그에 HTTP 200 응답과 `[TRAFFIC]` DB 저장 기록이 남는 것을 확인했다. 따라서 시연 트래픽 경로는 `demo client → test-web-app → PostgreSQL`이다.
+
+Hubble UI 포트포워딩은 `http://localhost:12000`에서 HTTP 200을 반환하는 것을 확인했다. 이번 단계에서는 브라우저 UI의 flow 목록을 직접 캡처하거나 Hubble CLI의 flow 레코드를 별도로 저장하지 않았다. L7 HTTP 메서드/URL 가시성도 아직 검증 범위에 포함하지 않는다.
+
+실행 명령은 [README의 Hubble 실제 앱 흐름 시연 절차](../README.md)를 참고한다. 시연 후에는 `kubectl --context kind-cilium-validation delete -f k8s/ebpf-validation/smart-traffic-demo.yaml`로 반복 요청을 중단할 수 있다.
 
 ### 재현 명령
 
