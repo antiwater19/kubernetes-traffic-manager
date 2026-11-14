@@ -1,0 +1,52 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: flow-server-allow-known-client
+  namespace: hubble-validation
+spec:
+  podSelector:
+    matchLabels:
+      app: flow-server
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: flow-client
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flow-denied-client
+  namespace: hubble-validation
+  labels:
+    app: flow-denied-client
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: flow-denied-client
+  template:
+    metadata:
+      labels:
+        app: flow-denied-client
+    spec:
+      containers:
+        - name: client
+          image: busybox:1.36.1
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - while true; do wget -T 1 -qO- http://flow-server:8080/ >/dev/null; sleep 3; done
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 32Mi

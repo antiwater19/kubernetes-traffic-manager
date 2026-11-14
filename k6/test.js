@@ -133,7 +133,9 @@ export function teardown() {
 function saveAnalysis(label) {
   const analyzerUrl = __ENV.ANALYZER_URL ||
     'http://traffic-analyzer-service.smart-traffic.svc.cluster.local:9000/analyze?window_seconds=60';
-  const response = http.post(analyzerUrl);
+  const response = http.post(analyzerUrl, null, {
+    headers: __ENV.ANALYZER_API_TOKEN ? { Authorization: `Bearer ${__ENV.ANALYZER_API_TOKEN}` } : {},
+  });
   if (response.status < 200 || response.status >= 300) {
     console.log(`[ANALYZER] ${label} request failed: HTTP ${response.status} ${response.body}`);
     return;

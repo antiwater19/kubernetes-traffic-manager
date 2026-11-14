@@ -105,6 +105,7 @@ kubectl apply -f k8s/ingress/ingress.yaml
 kubectl apply -f k8s/security/network-policy.yaml
 
 # analyzer 서비스 배포
+.\scripts\setup-analyzer-auth.ps1
 kubectl apply -f k8s/analyzer/rbac.yaml
 kubectl apply -f k8s/analyzer/deployment.yaml
 kubectl apply -f k8s/analyzer/service.yaml
@@ -137,15 +138,16 @@ kubectl apply -n monitoring -k k8s/monitoring/dashboard
 kubectl get pods -n monitoring
 ```
 
-앱 코드를 바꾼 뒤에는 새 이미지 버전을 빌드해 Docker Hub에 올린 다음 배포를 갱신합니다. 현재 배포 버전은 test app `v9`, analyzer `v18`입니다. Isolation Forest는 과거 정상 기준선만으로 학습하고 최근 트래픽을 고정된 모델로 점수화합니다.
+앱 코드를 바꾼 뒤에는 새 이미지 버전을 빌드해 Docker Hub에 올린 다음 배포를 갱신합니다. 현재 배포 버전은 test app `v9`, analyzer `v22`입니다. Isolation Forest는 과거 정상 기준선만으로 학습하고 최근 트래픽을 고정된 모델로 점수화합니다.
 
 ```powershell
 docker build -t antiwater19/test-web-app:v9 ./app-testing
-docker build -t antiwater19/traffic-analyzer:v18 ./analyzer
+docker build -t antiwater19/traffic-analyzer:v22 ./analyzer
 docker push antiwater19/test-web-app:v9
-docker push antiwater19/traffic-analyzer:v18
+docker push antiwater19/traffic-analyzer:v22
 kubectl apply -f k8s/app/deployment.yaml
 kubectl apply -f k8s/analyzer/deployment.yaml
+kubectl apply -f k8s/monitoring/prometheus.yaml
 kubectl rollout status deployment/test-web-app -n smart-traffic
 kubectl rollout status deployment/traffic-analyzer -n smart-traffic
 ```
@@ -182,13 +184,16 @@ analyzer는 PostgreSQL에서 요청 로그를 직접 조회해 기본 60초 구�
 응답의 `detector_metadata.rule_findings`, `isolation_forest_findings`, `combined_findings`는 각 방식별 탐지 클라이언트 수를 나타냅니다. `findings[]`의 `detection_sources`와 `rule_reasons`로 IP별 탐지 출처와 규칙 근거도 확인할 수 있습니다.
 ```bash
 kubectl port-forward -n smart-traffic svc/traffic-analyzer-service 9000:9000
-# 최근 60초 집계만 조회
-curl "http://localhost:9000/traffic/summary?window_seconds=60"
-# 최근 60초 분석 후 결과 저장
-curl -X POST "http://localhost:9000/analyze?window_seconds=60"
-# 최근 저장 결과 목록 또는 ID로 단건 조회
-curl "http://localhost:9000/analyses?limit=20"
-curl "http://localhost:9000/analyses/1"
+```
+Analyzer API는 로그인 쿠키가 필요합니다. 아래처럼 관리자 로그인을 한 뒤 같은 PowerShell 세션에서 API를 호출합니다.
+
+```powershell
+$adminCredential = Get-Credential -UserName admin -Message "Analyzer 관리자 로그인"
+$adminBody = @{ username = $adminCredential.UserName; password = $adminCredential.GetNetworkCredential().Password } | ConvertTo-Json -Compress
+Invoke-RestMethod -Method Post -Uri http://localhost:9000/auth/login -ContentType "application/json" -Body $adminBody -SessionVariable analyzerSession | Out-Null
+Invoke-RestMethod "http://localhost:9000/traffic/summary?window_seconds=60" -WebSession $analyzerSession
+Invoke-RestMethod -Method Post "http://localhost:9000/analyze?window_seconds=60" -WebSession $analyzerSession
+Invoke-RestMethod "http://localhost:9000/analyses?limit=20" -WebSession $analyzerSession
 ```
 분석기는 규칙 탐지와 Isolation Forest를 함께 사용합니다. 규칙은 요청 수, 오류 비율,
 평균 응답 시간을 확인하고, Isolation Forest는 직전 1일 동안 명시적으로 `normal`로 표시된
@@ -198,6 +203,19 @@ IP별 60초 집계(요청 수, 오류율, 평균/p95 응답 시간, 경로 수)�
 응답과 저장된 분석 결과의 `detector_metadata`에 모델 준비 상태와 학습 표본 수가 포함됩니다.
 첫 적용 뒤 새 기준선 표본을 모으려면 주기적으로 `/analyze`를 호출할 필요 없이 트래픽 로그를 쌓으면 됩니다.
 분석 요청은 NetworkPolicy를 자동 변경하지 않습니다.
+
+### 이상 징후 알림
+Analyzer는 실행 중 15초마다 최근 60초 트래픽을 자동 분석합니다. 탐지된 IP별 결과는 PostgreSQL `anomaly_alerts` 테이블에 저장되고 대시보드 **이상 징후 알림** 영역에 표시됩니다. 같은 IP와 탐지 방식 조합은 5분 동안 하나의 알림으로 묶어 관측 횟수와 마지막 감지 시각을 갱신합니다. 알림은 **확인 처리** 또는 **모두 확인**으로 읽음 상태를 관리할 수 있습니다. 이 주기 분석은 별도 분석 기록(`analysis_results`)을 매번 만들지는 않습니다.
+
+```powershell
+# 최신 알림 20개 / 미확인 알림만 조회
+Invoke-RestMethod "http://localhost:9000/alerts?limit=20" -WebSession $analyzerSession
+Invoke-RestMethod "http://localhost:9000/alerts?limit=20&unread_only=true" -WebSession $analyzerSession
+# 미확인 개수, 알림 단건 확인, 전체 확인
+Invoke-RestMethod "http://localhost:9000/alerts/unread-count" -WebSession $analyzerSession
+Invoke-RestMethod -Method Post "http://localhost:9000/alerts/1/acknowledge" -WebSession $analyzerSession
+Invoke-RestMethod -Method Post "http://localhost:9000/alerts/acknowledge-all" -WebSession $analyzerSession
+```
 
 기존 정상·이상 시나리오의 Isolation Forest 초기 오탐률과 탐지율은 [평가 기록](GuideBook/탐지율_초기평가.md)을 참고하세요. 이 수치는 저장된 과거 분석 결과에서 계산한 초기 비교입니다.
 
@@ -223,6 +241,34 @@ kubectl --context kind-cilium-validation port-forward -n kube-system svc/hubble-
 ```
 
 Hubble UI에서 `smart-traffic` 네임스페이스를 선택해 `smart-traffic-demo-client → test-web-app → traffic-db` 흐름을 확인합니다. 시연을 마치면 트래픽 생성을 멈춥니다. Hubble UI 터널도 닫으려면 포트포워딩 터미널에서 `Ctrl+C`를 누릅니다.
+
+### Analyzer 대시보드에서 Hubble 흐름·정책 판정 보기
+대시보드의 **네트워크 흐름** 표는 Hubble CLI를 통해 최근 Cilium 흐름을 조회합니다. Docker Desktop 주 개발 클러스터에는 Cilium/Hubble이 없으므로 이 기능은 **격리된 `kind-cilium-validation` 클러스터의 Analyzer 대시보드**에서 사용합니다. 기존 클러스터의 CNI는 바꾸지 않습니다. Cilium Relay의 gRPC 서비스 주소는 해당 클러스터 안에서만 사용합니다.
+
+아래 예시 정책은 `hubble-validation` namespace의 `flow-server`로 들어오는 연결을 `flow-client`에서만 허용합니다. 별도 `flow-denied-client` 요청은 차단되어 표에서 `DROPPED`와 정책 차단 결과를 비교할 수 있습니다. 현재 test app 흐름은 영향받지 않습니다.
+
+```powershell
+# 격리 클러스터에 정상 허용 및 차단 예시 적용
+kubectl --context kind-cilium-validation apply -f k8s/ebpf-validation/traffic.yaml
+kubectl --context kind-cilium-validation apply -f k8s/ebpf-validation/hubble-verdict-demo.yaml
+kubectl --context kind-cilium-validation rollout status deployment/flow-denied-client -n hubble-validation
+
+# 앞 절의 인증 Secret 설정을 한 번 마친 다음 Analyzer v22를 배포
+kubectl --context kind-cilium-validation apply -f k8s/analyzer/rbac.yaml
+kubectl --context kind-cilium-validation apply -f k8s/ebpf-validation/analyzer-deployment.yaml
+kubectl --context kind-cilium-validation apply -f k8s/analyzer/service.yaml
+kubectl --context kind-cilium-validation rollout status deployment/traffic-analyzer -n smart-traffic
+
+# 로컬 9001 포트로 대시보드 접속
+kubectl --context kind-cilium-validation port-forward -n smart-traffic svc/traffic-analyzer-service 9001:9000
+```
+
+브라우저에서 [http://localhost:9001/dashboard](http://localhost:9001/dashboard)을 열고 **네트워크 흐름** 영역에서 `smart-traffic`은 test app 흐름, `hubble-validation`은 허용·차단 예시를 선택합니다. 판정 필터로 `허용·전달`과 `차단·드롭`을 비교할 수 있습니다. Hubble은 최근 흐름 버퍼를 제공하므로 이는 장기 보관 로그가 아닙니다. Analyzer API의 연결 상태는 `GET /hubble/flows`에서 확인할 수 있습니다.
+
+```powershell
+# 격리된 데모 policy/차단 요청기만 정리할 때
+kubectl --context kind-cilium-validation delete -f k8s/ebpf-validation/hubble-verdict-demo.yaml
+```
 
 ```powershell
 kubectl --context kind-cilium-validation delete -f k8s/ebpf-validation/smart-traffic-demo.yaml
@@ -289,28 +335,39 @@ kubectl port-forward -n smart-traffic svc/traffic-analyzer-service 9000:9000
 대시보드와 가이드 상단의 테마 버튼으로 다크 모드와 라이트 모드를 전환할 수 있으며, 선택은 브라우저에 저장됩니다.
 대시보드를 닫을 때는 포트포워딩 중인 터미널에서 `Ctrl+C`를 누르세요.
 
+### 관리자 로그인과 권한
+대시보드와 Analyzer API는 로그인이 필요합니다. 관리자 계정은 분석 실행, IP 차단·해제, 요청 제한 변경, 알림 확인을 할 수 있습니다. 조회자 계정은 트래픽 요약, 분석 기록, 이상 알림과 Hubble 흐름만 볼 수 있습니다. 조회자 권한은 UI 버튼뿐 아니라 서버 API에서도 확인합니다. 로그인 세션은 8시간 유지되고, 같은 클라이언트에서 로그인에 5회 실패하면 5분간 재시도를 막습니다.
+
+Kubernetes Secret은 저장소에 비밀번호를 기록하지 않도록 PowerShell 스크립트에서 임의 생성합니다. 이 스크립트는 `docker-desktop`과 `kind-cilium-validation`의 `smart-traffic` namespace에 관리자·조회자 계정과 내부 API 토큰을 설정하고, `docker-desktop`에는 Prometheus 메트릭 토큰도 설정합니다. 스크립트를 실행하면 계정 비밀번호가 한 번 표시되므로 안전한 곳에 저장하세요. 다시 실행하면 계정/토큰이 교체됩니다.
+
+```powershell
+.\scripts\setup-analyzer-auth.ps1
+```
+
+로컬 포트포워딩은 HTTP이므로 현재 Kubernetes 설정은 세션 쿠키의 `Secure` 옵션을 끈 상태입니다. 외부 공개 전에 HTTPS 종단을 설정하고 Analyzer의 `AUTH_COOKIE_SECURE`를 `true`로 바꾸세요. HTTPS 없이 인터넷에 공개하지 마세요. k6의 분석 호출과 Prometheus의 `/metrics` 스크레이프는 별도 Secret 토큰을 사용합니다.
+
 ### IP 차단 및 IP별 요청 제한 (MVP)
 대시보드의 **클라이언트 분석** 표에서 IP별로 차단 또는 요청 제한을 설정하고, **IP 정책 관리** 표에서 저장된 정책을 확인·해제할 수 있습니다. 차단은 설정 시간(1~720시간)이 지나면 자동 해제되며, 시간을 비우면 수동 해제할 때까지 유지됩니다. 요청 제한은 초 단위 고정 구간으로 적용합니다. 예를 들어 `30회 / 60초`는 해당 IP의 60초 구간에서 30회를 초과한 요청에 HTTP 429와 `Retry-After`를 돌려줍니다. 차단된 요청은 HTTP 403을 반환합니다.
 
-정책과 요청 카운터는 PostgreSQL에 저장되므로 앱 Pod가 여러 개여도 제한 카운터를 공유합니다. 이 MVP는 테스트 웹앱에서 요청을 거부하는 애플리케이션 계층 제어이며, Kubernetes 네트워크 패킷 자체를 차단하지는 않습니다. 따라서 외부 공개 전에 대시보드/API 인증을 추가하고, 프록시 뒤에서 실제 클라이언트 IP를 보존하도록 설정해야 합니다. 앱은 직접 연결의 peer IP를 사용하고, `X-Forwarded-For`는 `TRUSTED_PROXY_CIDRS`에 등록한 프록시에서 온 경우에만 사용합니다. 현재 Docker Desktop Ingress Pod 주소 `10.1.2.114/32`를 배포 설정에 등록했습니다. Ingress Pod가 교체되어 주소가 바뀌면 `kubectl get pods -n ingress-nginx -o wide`로 새 주소를 확인해 `k8s/app/deployment.yaml`의 값을 갱신하세요.
+정책과 요청 카운터는 PostgreSQL에 저장되므로 앱 Pod가 여러 개여도 제한 카운터를 공유합니다. 이 MVP는 테스트 웹앱에서 요청을 거부하는 애플리케이션 계층 제어이며, Kubernetes 네트워크 패킷 자체를 차단하지는 않습니다. 외부 공개 시에는 대시보드 HTTPS와 실제 클라이언트 IP를 보존하는 프록시 설정도 필요합니다. 앱은 직접 연결의 peer IP를 사용하고, `X-Forwarded-For`는 `TRUSTED_PROXY_CIDRS`에 등록한 프록시에서 온 경우에만 사용합니다. 현재 Docker Desktop Ingress Pod 주소 `10.1.2.114/32`를 배포 설정에 등록했습니다. Ingress Pod가 교체되어 주소가 바뀌면 `kubectl get pods -n ingress-nginx -o wide`로 새 주소를 확인해 `k8s/app/deployment.yaml`의 값을 갱신하세요.
 
-정책 API는 analyzer 포트포워딩 후 사용할 수 있습니다.
+정책 API는 analyzer 포트포워딩 후 관리자 로그인 세션에서 호출합니다. 위에서 만든 `$adminCredential`과 `$analyzerSession` 변수를 그대로 사용하면 됩니다.
 
 ```powershell
 # 정책 목록
-curl.exe http://localhost:9000/ip-policies
+Invoke-RestMethod http://localhost:9000/ip-policies -WebSession $analyzerSession
 # IP 영구 차단 (duration_seconds 생략)
-curl.exe -X POST http://localhost:9000/ip-policies/block -H "Content-Type: application/json" -d '{"client_ip":"192.0.2.25","reason":"비정상 요청"}'
+Invoke-RestMethod -Method Post http://localhost:9000/ip-policies/block -ContentType "application/json" -Body (@{client_ip="192.0.2.25";reason="비정상 요청"} | ConvertTo-Json -Compress) -WebSession $analyzerSession
 # IP 1시간 차단
-curl.exe -X POST http://localhost:9000/ip-policies/block -H "Content-Type: application/json" -d '{"client_ip":"192.0.2.25","reason":"시연 차단","duration_seconds":3600}'
+Invoke-RestMethod -Method Post http://localhost:9000/ip-policies/block -ContentType "application/json" -Body (@{client_ip="192.0.2.25";reason="시연 차단";duration_seconds=3600} | ConvertTo-Json -Compress) -WebSession $analyzerSession
 # 차단 해제
-curl.exe -X POST http://localhost:9000/ip-policies/unblock -H "Content-Type: application/json" -d '{"client_ip":"192.0.2.25"}'
+Invoke-RestMethod -Method Post http://localhost:9000/ip-policies/unblock -ContentType "application/json" -Body (@{client_ip="192.0.2.25"} | ConvertTo-Json -Compress) -WebSession $analyzerSession
 # 분당 30회로 제한 / 제한 해제
-curl.exe -X POST http://localhost:9000/ip-policies/rate-limit -H "Content-Type: application/json" -d '{"client_ip":"192.0.2.25","max_requests":30,"window_seconds":60}'
-curl.exe -X POST http://localhost:9000/ip-policies/rate-limit/clear -H "Content-Type: application/json" -d '{"client_ip":"192.0.2.25"}'
+Invoke-RestMethod -Method Post http://localhost:9000/ip-policies/rate-limit -ContentType "application/json" -Body (@{client_ip="192.0.2.25";max_requests=30;window_seconds=60} | ConvertTo-Json -Compress) -WebSession $analyzerSession
+Invoke-RestMethod -Method Post http://localhost:9000/ip-policies/rate-limit/clear -ContentType "application/json" -Body (@{client_ip="192.0.2.25"} | ConvertTo-Json -Compress) -WebSession $analyzerSession
 ```
 
-현재 배포에 쓰인 이미지는 Docker Hub의 `antiwater19/test-web-app:v9`, `antiwater19/traffic-analyzer:v18`입니다.
+현재 배포에 쓰인 이미지는 Docker Hub의 `antiwater19/test-web-app:v9`, `antiwater19/traffic-analyzer:v22`입니다.
 
 접속되지 않으면 다른 프로그램이 9000 포트를 사용 중인지 확인한 뒤, 예를 들어 로컬 포트만 9001로 바꿔 실행하고 `http://localhost:9001/dashboard`로 접속할 수 있습니다.
 ```powershell
@@ -346,9 +403,9 @@ curl http://test.local/stats
 ```
 
 ### analyzer
-요청 카운트 세는거
-```bash
-curl http://localhost:9000/analyze
+분석 API는 관리자 로그인 쿠키가 필요합니다. PowerShell에서는 위의 로그인 예시에서 생성한 `$analyzerSession`을 사용합니다.
+```powershell
+Invoke-RestMethod -Method Post "http://localhost:9000/analyze?window_seconds=60" -WebSession $analyzerSession
 ```
 
 ---

@@ -27,6 +27,11 @@ spec:
               value: "true"
             - name: ANALYZER_URL
               value: http://traffic-analyzer-service.smart-traffic.svc.cluster.local:9000/analyze?window_seconds=60
+            - name: ANALYZER_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: traffic-analyzer-auth
+                  key: internal-api-token
           volumeMounts:
             - name: k6-script
               mountPath: /scripts

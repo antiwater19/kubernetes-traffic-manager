@@ -1,4 +1,4 @@
-const state = { windowSeconds: 60, summary: null, policies: [], refreshTimer: null };
+const state = { windowSeconds: 60, summary: null, policies: [], alerts: [], unreadAlerts: 0, knownAlertIds: null, hubbleFlows: [], hubbleStatus: null, currentUser: null, refreshTimer: null };
 const numberFormat = new Intl.NumberFormat('ko-KR');
 const timeFormat = new Intl.DateTimeFormat('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 const shortTimeFormat = new Intl.DateTimeFormat('ko-KR', { hour: '2-digit', minute: '2-digit' });
@@ -75,6 +75,12 @@ function renderSummary(data) {
   document.getElementById('model-training-note').textContent = model.status === 'ready'
     ? `기준선 ${numberFormat.format(trainingSamples)}/${numberFormat.format(minimumSamples)}구간 · 평가 ${numberFormat.format(model.scored_clients || 0)} IP`
     : `기준선 ${numberFormat.format(trainingSamples)}/${numberFormat.format(minimumSamples)}구간 · 규칙 탐지는 동작 중`;
+  const analyzeButton = document.getElementById('analyze-button');
+  if (state.currentUser?.role === 'viewer') {
+    analyzeButton.disabled = true;
+    analyzeButton.title = '관리자 계정에서 사용할 수 있습니다.';
+    analyzeButton.querySelector('.button-label').textContent = '관리자 전용';
+  }
 
   const updated = new Date(data.window_ended_at);
   document.getElementById('last-updated').textContent = `갱신 ${timeFormat.format(updated)}`;
@@ -114,8 +120,12 @@ function renderClients(data) {
     const policy = state.policies.find(item => item.client_ip === client.client_ip);
     const actions = document.createElement('td');
     actions.className = 'policy-actions';
-    actions.appendChild(makeActionButton(policy?.is_blocked ? '차단 해제' : '차단', policy?.is_blocked ? 'unblock' : 'block', client.client_ip));
-    actions.appendChild(makeActionButton(policy?.rate_limit_max_requests ? '제한 변경' : '요청 제한', 'set-limit', client.client_ip));
+    if (state.currentUser?.role === 'admin') {
+      actions.appendChild(makeActionButton(policy?.is_blocked ? '차단 해제' : '차단', policy?.is_blocked ? 'unblock' : 'block', client.client_ip));
+      actions.appendChild(makeActionButton(policy?.rate_limit_max_requests ? '제한 변경' : '요청 제한', 'set-limit', client.client_ip));
+    } else {
+      actions.textContent = '조회 전용';
+    }
     row.appendChild(actions);
   });
 }
@@ -152,9 +162,138 @@ function renderPolicies() {
     setCell(row, policy.block_reason || '—');
     const actions = document.createElement('td');
     actions.className = 'policy-actions';
-    actions.appendChild(makeActionButton(policy.is_blocked ? '차단 해제' : '차단', policy.is_blocked ? 'unblock' : 'block', policy.client_ip));
-    actions.appendChild(makeActionButton(policy.rate_limit_max_requests ? '제한 해제' : '요청 제한', policy.rate_limit_max_requests ? 'clear-limit' : 'set-limit', policy.client_ip));
+    if (state.currentUser?.role === 'admin') {
+      actions.appendChild(makeActionButton(policy.is_blocked ? '차단 해제' : '차단', policy.is_blocked ? 'unblock' : 'block', policy.client_ip));
+      actions.appendChild(makeActionButton(policy.rate_limit_max_requests ? '제한 해제' : '요청 제한', policy.rate_limit_max_requests ? 'clear-limit' : 'set-limit', policy.client_ip));
+    } else {
+      actions.textContent = '조회 전용';
+    }
     row.appendChild(actions);
+  });
+}
+
+function renderAlertCenter() {
+  const list = document.getElementById('alert-list');
+  list.replaceChildren();
+  const badge = document.getElementById('alert-count');
+  badge.textContent = state.unreadAlerts > 99 ? '99+' : String(state.unreadAlerts);
+  badge.classList.toggle('hidden', state.unreadAlerts === 0);
+  document.getElementById('alert-unread-label').textContent = `미확인 ${numberFormat.format(state.unreadAlerts)}건`;
+  const acknowledgeAllButton = document.getElementById('acknowledge-all-alerts');
+  acknowledgeAllButton.disabled = state.unreadAlerts === 0 || state.currentUser?.role !== 'admin';
+  acknowledgeAllButton.hidden = state.currentUser?.role !== 'admin';
+
+  if (!state.alerts.length) {
+    const empty = document.createElement('div');
+    empty.className = 'empty-state';
+    empty.textContent = '아직 이상 징후 알림이 없습니다. 분석기는 최근 트래픽을 주기적으로 확인합니다.';
+    list.appendChild(empty);
+    return;
+  }
+
+  state.alerts.forEach(alert => {
+    const card = document.createElement('article');
+    card.className = `alert-card ${alert.severity} ${alert.is_acknowledged ? 'acknowledged' : ''}`;
+    const header = document.createElement('div');
+    header.className = 'alert-card-header';
+    const title = document.createElement('strong');
+    title.textContent = alert.title;
+    const meta = document.createElement('span');
+    meta.textContent = `${timeFormat.format(new Date(alert.last_seen_at))} · ${numberFormat.format(alert.occurrence_count)}회 관측`;
+    header.append(title, meta);
+    card.appendChild(header);
+
+    const detail = alert.details || {};
+    const metrics = document.createElement('div');
+    metrics.className = 'alert-metrics';
+    metrics.textContent = `요청 ${numberFormat.format(detail.request_count || 0)}건 · 오류율 ${((detail.error_rate || 0) * 100).toFixed(1)}% · 평균 지연 ${formatMs(detail.average_latency_ms)}`;
+    card.appendChild(metrics);
+
+    const sources = document.createElement('div');
+    sources.className = 'detection-sources';
+    (alert.detection_sources || []).forEach(source => {
+      const tag = document.createElement('span');
+      tag.className = `source-tag ${source === 'isolation_forest' ? 'model-source' : 'rules-source'}`;
+      tag.textContent = source === 'isolation_forest' ? 'Isolation Forest' : '규칙 기반';
+      sources.appendChild(tag);
+    });
+    if (sources.childElementCount) card.appendChild(sources);
+
+    const reasons = document.createElement('ul');
+    reasons.className = 'alert-reasons';
+    (alert.reasons || []).forEach(reason => {
+      const item = document.createElement('li');
+      item.textContent = reason;
+      reasons.appendChild(item);
+    });
+    if (reasons.childElementCount) card.appendChild(reasons);
+
+    const footer = document.createElement('div');
+    footer.className = 'alert-card-footer';
+    const stateLabel = document.createElement('span');
+    stateLabel.textContent = alert.is_acknowledged ? '확인 완료' : '미확인';
+    footer.appendChild(stateLabel);
+    if (!alert.is_acknowledged && state.currentUser?.role === 'admin') {
+      const acknowledge = document.createElement('button');
+      acknowledge.type = 'button';
+      acknowledge.className = 'small-action secondary';
+      acknowledge.dataset.alertAction = 'acknowledge';
+      acknowledge.dataset.alertId = String(alert.id);
+      acknowledge.textContent = '확인 처리';
+      footer.appendChild(acknowledge);
+    }
+    card.appendChild(footer);
+    list.appendChild(card);
+  });
+}
+
+function flowEndpointLabel(endpoint) {
+  const workload = endpoint.pod || endpoint.workload || endpoint.namespace || '외부 endpoint';
+  const name = endpoint.namespace && !workload.startsWith(`${endpoint.namespace}/`)
+    ? `${endpoint.namespace}/${workload}`
+    : workload;
+  return endpoint.ip ? `${name}\n${endpoint.ip}` : name;
+}
+
+function renderHubbleFlows() {
+  const body = document.getElementById('hubble-flow-rows');
+  const status = document.getElementById('hubble-status');
+  const message = document.getElementById('hubble-message');
+  body.replaceChildren();
+  const data = state.hubbleStatus || {};
+  status.className = `status-pill ${data.available ? 'normal' : 'neutral'}`;
+  status.textContent = data.available ? 'Hubble 연결됨' : data.configured ? 'Hubble 연결 오류' : 'Hubble 미설정';
+  message.textContent = data.message || 'Hubble 상태를 확인하는 중입니다.';
+
+  if (!data.available) {
+    const row = body.insertRow();
+    const cell = setCell(row, data.message || 'Hubble Relay가 연결되지 않았습니다.', 'empty-cell');
+    cell.colSpan = 6;
+    return;
+  }
+
+  const selectedVerdict = document.getElementById('hubble-verdict').value;
+  const flows = state.hubbleFlows.filter(flow => selectedVerdict === 'ALL' || flow.verdict === selectedVerdict);
+  if (!flows.length) {
+    const row = body.insertRow();
+    const cell = setCell(row, '선택한 조건에 표시할 최근 흐름이 없습니다.', 'empty-cell');
+    cell.colSpan = 6;
+    return;
+  }
+  flows.forEach(flow => {
+    const row = body.insertRow();
+    const date = new Date(flow.time);
+    setCell(row, Number.isNaN(date.getTime()) ? '—' : timeFormat.format(date));
+    setCell(row, flowEndpointLabel(flow.source), 'flow-endpoint');
+    setCell(row, flowEndpointLabel(flow.destination), 'flow-endpoint');
+    const protocol = [flow.protocol, flow.destination_port ? `:${flow.destination_port}` : ''].join('');
+    setCell(row, protocol || '—', 'number-cell');
+    const verdictCell = setCell(row, flow.verdict_label || flow.verdict, 'flow-verdict');
+    verdictCell.classList.add(flow.verdict === 'DROPPED' ? 'dropped' : flow.verdict === 'FORWARDED' ? 'forwarded' : flow.verdict === 'AUDIT' ? 'audited' : 'other');
+    const details = [...(flow.policy_names || [])];
+    if (flow.summary) details.push(flow.summary);
+    if (flow.drop_reason && !details.some(item => item.includes(flow.drop_reason))) details.push(flow.drop_reason);
+    setCell(row, details.join('\n') || '명시된 정책 정보 없음', 'hubble-detail-cell');
   });
 }
 
@@ -352,6 +491,49 @@ async function loadPolicies() {
   if (state.summary) renderClients(state.summary);
 }
 
+async function loadAlerts() {
+  const [alertsResponse, countResponse] = await Promise.all([
+    fetch('/alerts?limit=20', { cache: 'no-store' }),
+    fetch('/alerts/unread-count', { cache: 'no-store' }),
+  ]);
+  if (!alertsResponse.ok || !countResponse.ok) throw new Error('이상 알림을 불러오지 못했습니다.');
+  const alerts = await alertsResponse.json();
+  const count = await countResponse.json();
+  if (state.knownAlertIds) {
+    const newUnread = alerts.filter(alert => !alert.is_acknowledged && !state.knownAlertIds.has(alert.id));
+    if (newUnread.length) showToast(`새 이상 징후 알림 ${newUnread.length}건이 도착했습니다.`);
+  }
+  state.knownAlertIds = new Set(alerts.map(alert => alert.id));
+  state.alerts = alerts;
+  state.unreadAlerts = Number(count.unread_count || 0);
+  renderAlertCenter();
+}
+
+async function loadHubbleFlows() {
+  const namespace = document.getElementById('hubble-namespace').value;
+  const query = new URLSearchParams({ limit: '100' });
+  if (namespace) query.set('namespace', namespace);
+  const response = await fetch(`/hubble/flows?${query}`, { cache: 'no-store' });
+  if (!response.ok) throw new Error(`Hubble 흐름 조회 실패 (${response.status})`);
+  const data = await response.json();
+  state.hubbleFlows = data.flows || [];
+  state.hubbleStatus = data;
+  renderHubbleFlows();
+}
+
+async function acknowledgeAlert(alertId) {
+  const response = await fetch(`/alerts/${alertId}/acknowledge`, { method: 'POST' });
+  if (!response.ok) throw new Error(`알림 확인 처리 실패 (${response.status})`);
+  await loadAlerts();
+}
+
+async function acknowledgeAllAlerts() {
+  const response = await fetch('/alerts/acknowledge-all', { method: 'POST' });
+  if (!response.ok) throw new Error(`알림 확인 처리 실패 (${response.status})`);
+  await loadAlerts();
+  showToast('미확인 알림을 모두 확인 처리했습니다.');
+}
+
 async function savePolicy(path, body) {
   const response = await fetch(path, {
     method: 'POST',
@@ -368,6 +550,7 @@ async function savePolicy(path, body) {
 }
 
 async function handlePolicyAction(event) {
+  if (state.currentUser?.role !== 'admin') return;
   const button = event.target.closest('button[data-action]');
   if (!button) return;
   const clientIp = button.dataset.ip;
@@ -413,7 +596,7 @@ async function runAnalysis() {
     const response = await fetch(`/analyze?window_seconds=${state.windowSeconds}`, { method: 'POST' });
     if (!response.ok) throw new Error(`분석 실패 (${response.status})`);
     const result = await response.json();
-    await Promise.all([loadSummary(), loadHistory()]);
+    await Promise.all([loadSummary(), loadHistory(), loadAlerts(), loadHubbleFlows()]);
     showToast(`분석 결과를 저장했습니다. ${result.findings.length}건 탐지`);
   } catch (error) {
     showToast(error.message || '분석 요청에 실패했습니다.');
@@ -425,7 +608,7 @@ async function runAnalysis() {
 
 async function refreshAll() {
   try {
-    await Promise.all([loadSummary(), loadHistory(), loadPolicies()]);
+    await Promise.all([loadSummary(), loadHistory(), loadPolicies(), loadAlerts(), loadHubbleFlows()]);
   } catch (error) {
     showToast(error.message || '대시보드 데이터를 불러오지 못했습니다.');
   }
@@ -439,7 +622,30 @@ document.getElementById('analyze-button').addEventListener('click', runAnalysis)
 document.getElementById('refresh-history').addEventListener('click', () => loadHistory().catch(error => showToast(error.message)));
 document.getElementById('client-rows').addEventListener('click', handlePolicyAction);
 document.getElementById('policy-rows').addEventListener('click', handlePolicyAction);
+document.getElementById('alert-list').addEventListener('click', event => {
+  const button = event.target.closest('button[data-alert-action="acknowledge"]');
+  if (button) acknowledgeAlert(button.dataset.alertId).catch(error => showToast(error.message));
+});
+document.getElementById('acknowledge-all-alerts').addEventListener('click', () => acknowledgeAllAlerts().catch(error => showToast(error.message)));
+document.getElementById('hubble-namespace').addEventListener('change', () => loadHubbleFlows().catch(error => showToast(error.message)));
+document.getElementById('hubble-verdict').addEventListener('change', renderHubbleFlows);
 window.addEventListener('resize', () => { if (state.summary) renderSummary(state.summary); });
 window.addEventListener('themechange', () => { if (state.summary) renderSummary(state.summary); });
-refreshAll();
-state.refreshTimer = window.setInterval(() => Promise.all([loadSummary(), loadPolicies()]).catch(() => {}), 5000);
+async function initializeDashboard() {
+  const response = await fetch('/auth/me', { cache: 'no-store' });
+  if (!response.ok) {
+    location.replace(`/login?next=${encodeURIComponent(location.pathname + location.search)}`);
+    return;
+  }
+  state.currentUser = await response.json();
+  document.getElementById('current-user').textContent = state.currentUser.username;
+  document.getElementById('current-role').textContent = state.currentUser.role === 'admin' ? '관리자' : '조회자';
+  await refreshAll();
+  state.refreshTimer = window.setInterval(() => Promise.all([loadSummary(), loadPolicies(), loadAlerts(), loadHubbleFlows()]).catch(() => {}), 5000);
+}
+
+document.getElementById('logout-button').addEventListener('click', async () => {
+  await fetch('/auth/logout', { method: 'POST' });
+  location.assign('/login');
+});
+initializeDashboard().catch(() => location.replace('/login'));

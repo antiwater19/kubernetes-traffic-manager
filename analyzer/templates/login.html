@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f7fb">
+  <title>Smart Traffic | 로그인</title>
+  <link rel="stylesheet" href="/dashboard-static/login.css?v=22">
+</head>
+<body>
+  <main class="login-shell">
+    <section class="login-card" aria-labelledby="login-title">
+      <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+      <p class="eyebrow">SMART TRAFFIC · SECURITY CONSOLE</p>
+      <h1 id="login-title">관리자 대시보드 로그인</h1>
+      <p class="intro">계정에 따라 대시보드 조회 또는 관리 기능을 사용할 수 있습니다.</p>
+      <form id="login-form">
+        <label for="username">사용자 이름</label>
+        <input id="username" name="username" autocomplete="username" required autofocus>
+        <label for="password">비밀번호</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
+        <p class="login-error" id="login-error" role="alert" aria-live="polite"></p>
+        <button type="submit" id="login-button">로그인</button>
+      </form>
+      <div class="roles"><span><b>관리자</b> 전체 조회와 정책·분석 작업</span><span><b>조회자</b> 대시보드와 흐름 조회</span></div>
+    </section>
+  </main>
+  <script>
+    const form = document.getElementById('login-form');
+    const error = document.getElementById('login-error');
+    const button = document.getElementById('login-button');
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      button.disabled = true;
+      error.textContent = '';
+      try {
+        const response = await fetch('/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: form.username.value,
+            password: form.password.value,
+            next: new URLSearchParams(location.search).get('next') || '/dashboard',
+          }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || '로그인할 수 없습니다.');
+        location.assign(result.next);
+      } catch (failure) {
+        error.textContent = failure.message || '로그인 요청에 실패했습니다.';
+      } finally {
+        button.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

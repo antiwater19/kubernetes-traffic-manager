@@ -103,6 +103,26 @@ class AnalysisResult(Base):
     detector_metadata: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
+class AnomalyAlert(Base):
+    """Deduplicated, persistent notifications produced by automatic analysis."""
+
+    __tablename__ = "anomaly_alerts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    dedupe_key: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    client_ip: Mapped[str] = mapped_column(String(45), index=True)
+    severity: Mapped[str] = mapped_column(String(16), index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    reasons: Mapped[list] = mapped_column(JSON)
+    detection_sources: Mapped[list] = mapped_column(JSON)
+    details: Mapped[dict] = mapped_column(JSON, default=dict)
+    first_seen_at: Mapped[object] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_seen_at: Mapped[object] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    occurrence_count: Mapped[int] = mapped_column(Integer, default=1)
+    is_acknowledged: Mapped[bool] = mapped_column(default=False, server_default="false", index=True)
+    acknowledged_at: Mapped[object | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)
     # Additive migration for analyzer versions deployed before timeline charts.

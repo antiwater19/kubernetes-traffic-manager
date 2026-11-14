@@ -35,3 +35,6 @@ spec:
     - port: http
       path: /metrics
       interval: 15s
+      bearerTokenSecret:
+        name: traffic-analyzer-auth-metrics
+        key: token

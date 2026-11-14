@@ -23,3 +23,10 @@ spec:
           port: 8000
         - protocol: TCP
           port: 9000
+    - from:
+        - podSelector:
+            matchLabels:
+              app: k6-test
+      ports:
+        - protocol: TCP
+          port: 9000

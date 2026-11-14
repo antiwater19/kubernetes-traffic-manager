@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f4f7fb">
   <title>Smart Traffic | 분석 사용 가이드</title>
-  <link rel="stylesheet" href="/dashboard-static/dashboard.css">
-  <link rel="stylesheet" href="/dashboard-static/guide.css?v=17">
+  <link rel="stylesheet" href="/dashboard-static/dashboard.css?v=22">
+  <link rel="stylesheet" href="/dashboard-static/guide.css?v=22">
   <script src="/dashboard-static/theme.js"></script>
 </head>
 <body>
@@ -29,7 +29,7 @@
     <main class="main-content guide-main">
       <header class="topbar">
         <div class="breadcrumbs"><a href="/dashboard">Workspace</a><b>/</b><strong>분석 사용 가이드</strong></div>
-        <div class="guide-top-actions"><button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false"><span class="theme-icon" aria-hidden="true">◐</span><span class="theme-label">다크 모드</span></button><a class="guide-back" href="/dashboard">← 대시보드로 돌아가기</a></div>
+        <div class="guide-top-actions"><span class="user-identity"><strong id="current-user">계정</strong><small id="current-role">권한 확인 중</small></span><button class="logout-button" id="logout-button" type="button">로그아웃</button><button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false"><span class="theme-icon" aria-hidden="true">◐</span><span class="theme-label">다크 모드</span></button><a class="guide-back" href="/dashboard">← 대시보드로 돌아가기</a></div>
       </header>
 
       <section class="guide-hero">
@@ -45,7 +45,7 @@
           <article><b>1</b><strong>요청 생성</strong><p>브라우저 또는 k6가 테스트 앱의 API를 호출합니다.</p></article><i aria-hidden="true">→</i>
           <article><b>2</b><strong>로그 기록</strong><p>FastAPI 미들웨어가 요청 정보와 응답 결과를 PostgreSQL <code>request_logs</code>에 남깁니다.</p></article><i aria-hidden="true">→</i>
           <article><b>3</b><strong>구간 분석</strong><p>Analyzer가 최근 구간을 집계해 규칙과 Isolation Forest로 검사합니다.</p></article><i aria-hidden="true">→</i>
-          <article><b>4</b><strong>결과 확인</strong><p>대시보드에서 확인하고 분석 실행 결과는 <code>analysis_results</code>에 저장합니다.</p></article>
+          <article><b>4</b><strong>결과 알림</strong><p>대시보드에서 확인하고 분석 실행 결과는 <code>analysis_results</code>, 이상 징후 알림은 <code>anomaly_alerts</code>에 저장합니다.</p></article>
         </div>
         <div class="info-note"><strong>역할 구분</strong><span>테스트 앱은 요청 로그를 쓰고 Analyzer는 그 로그를 읽어 분석 결과를 저장합니다. Prometheus 메트릭은 별도 경로이며 Isolation Forest 입력 데이터가 아닙니다.</span></div>
       </section>
@@ -103,10 +103,50 @@ kubectl logs -n smart-traffic job/k6-test</code></pre>
         </div>
         <pre><code>curl -X POST "http://localhost:9000/analyze?window_seconds=60"
 curl "http://localhost:9000/analyses?limit=20"</code></pre>
-        <div class="info-note"><strong>저장 위치</strong><span>요청 로그는 PostgreSQL <code>request_logs</code>, 분석 실행 결과는 <code>analysis_results</code>에 저장됩니다. 대시보드는 포트포워딩 터미널이 실행 중인 동안 접속할 수 있습니다.</span></div>
+        <div class="info-note"><strong>저장 위치</strong><span>요청 로그는 PostgreSQL <code>request_logs</code>, 분석 실행 결과는 <code>analysis_results</code>, 알림 이력은 <code>anomaly_alerts</code>에 저장됩니다. 대시보드는 포트포워딩 터미널이 실행 중인 동안 접속할 수 있습니다.</span></div>
+      </section>
+      <section class="guide-section">
+        <div class="section-title"><span>06</span><div><h2>이상 징후 알림</h2><p>분석기가 최근 트래픽을 확인하고 알림 이력을 관리합니다.</p></div></div>
+        <ol class="guide-list">
+          <li><b>자동 확인</b><span>Analyzer가 15초마다 최근 60초 구간을 규칙 기반과 Isolation Forest로 확인합니다. 이상 징후가 없으면 알림을 만들지 않습니다.</span></li>
+          <li><b>중복 묶기</b><span>같은 IP와 탐지 방식의 알림은 5분 간격으로 묶고 관측 횟수와 마지막 감지 시각을 갱신합니다.</span></li>
+          <li><b>알림 확인</b><span>대시보드 상단의 알림 개수 또는 사이드바의 이상 알림을 열어 근거를 보고, 단건 또는 전체를 확인 처리합니다.</span></li>
+          <li><b>영구 저장</b><span>알림은 PostgreSQL <code>anomaly_alerts</code>에 저장됩니다. Analyzer Pod를 재시작해도 이력이 남습니다.</span></li>
+        </ol>
+        <div class="endpoint-grid">
+          <article><code>GET /alerts?limit=20</code><span>최근 알림 조회</span></article>
+          <article><code>GET /alerts/unread-count</code><span>미확인 알림 수</span></article>
+          <article><code>POST /alerts/{id}/acknowledge</code><span>알림 단건 확인</span></article>
+          <article><code>POST /alerts/acknowledge-all</code><span>미확인 전체 확인</span></article>
+        </div>
+      </section>
+      <section class="guide-section">
+        <div class="section-title"><span>07</span><div><h2>Hubble 네트워크 흐름과 정책 결과</h2><p>Cilium이 관측한 연결과 전달 판정을 확인합니다.</p></div></div>
+        <ol class="guide-list">
+          <li><b>흐름 조회</b><span>대시보드의 <b>네트워크 흐름</b>에서 namespace를 고르면 Hubble Relay가 최근 흐름을 반환합니다. 표에는 출발지·목적지 Pod/IP, L4 프로토콜·포트, verdict와 정책/차단 사유가 표시됩니다.</span></li>
+          <li><b>판정 해석</b><span><code>FORWARDED</code>는 전달됨(허용), <code>DROPPED</code>는 드롭(차단), <code>AUDIT</code>는 감사 모드 판정입니다. 정책 이름은 Hubble 이벤트에 실제로 포함된 경우 표시합니다.</span></li>
+          <li><b>클러스터 범위</b><span>주 개발 클러스터 Docker Desktop은 Cilium을 사용하지 않아 Hubble 흐름을 제공하지 않습니다. 실제 흐름은 Cilium이 설치된 격리 검증 클러스터에 Analyzer를 배포해 확인하며, 기본 클러스터의 CNI는 변경하지 않습니다.</span></li>
+        </ol>
+        <div class="endpoint-grid">
+          <article><code>GET /hubble/flows?limit=100</code><span>최근 흐름 조회</span></article>
+          <article><code>GET /hubble/flows?namespace=smart-traffic</code><span>namespace 필터 조회</span></article>
+        </div>
       </section>
       <footer class="guide-footer"><span>설명은 현재 구현된 Analyzer 동작을 기준으로 작성했습니다.</span><a href="/dashboard">대시보드로 돌아가기 ↑</a></footer>
     </main>
   </div>
+  <script>
+    fetch('/auth/me', { cache: 'no-store' }).then(response => {
+      if (!response.ok) throw new Error('로그인이 필요합니다.');
+      return response.json();
+    }).then(user => {
+      document.getElementById('current-user').textContent = user.username;
+      document.getElementById('current-role').textContent = user.role === 'admin' ? '관리자' : '조회자';
+    }).catch(() => location.replace(`/login?next=${encodeURIComponent(location.pathname)}`));
+    document.getElementById('logout-button').addEventListener('click', async () => {
+      await fetch('/auth/logout', { method: 'POST' });
+      location.assign('/login');
+    });
+  </script>
 </body>
 </html>

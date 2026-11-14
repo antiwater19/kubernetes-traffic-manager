@@ -116,6 +116,47 @@ html[data-theme="dark"] .guide-footer a,html[data-theme="dark"] .guide-back { co
 .policy-status { font-size:10px;font-weight:700; }
 .policy-status.blocked { color:#d65762; }
 .policy-status.allowed { color:#179a73; }
+.alerts-link { display:inline-flex;align-items:center;gap:5px;padding:5px 8px;border:1px solid #e7ebf2;border-radius:7px;color:#65738b;text-decoration:none;font-size:9px;font-weight:700; }
+.alerts-link:hover { border-color:#d2dcf1;background:#f7f9ff; }
+.alerts-link b { min-width:16px;height:16px;display:grid;place-items:center;padding:0 3px;border-radius:9px;background:#dc5965;color:#fff;font-size:8px; }
+.alert-center { margin-top:14px;padding:17px 18px; }
+.alert-heading-actions { display:flex;align-items:center;gap:8px; }
+.alert-heading-actions button { white-space:nowrap; }
+.alert-list { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:14px; }
+.alert-card { min-width:0;padding:12px;border:1px solid #f0dfe0;border-left:3px solid #dc6670;border-radius:8px;background:#fffafa; }
+.alert-card.medium { border-color:#f0e6d4;border-left-color:#d09a3c;background:#fffdf8; }
+.alert-card.acknowledged { opacity:.72; }
+.alert-card-header { display:flex;justify-content:space-between;align-items:flex-start;gap:10px; }
+.alert-card-header strong { color:#4d5a70;font-size:11px; }
+.alert-card-header>span { flex:none;color:#98a3b2;font-size:9px; }
+.alert-metrics { margin-top:8px;color:#718097;font-size:9px; }
+.alert-reasons { margin:8px 0 0;padding-left:16px;color:#65738b;font-size:9px;line-height:1.65; }
+.alert-card-footer { display:flex;justify-content:space-between;align-items:center;margin-top:9px;padding-top:8px;border-top:1px solid #f0e8e8;color:#9aa5b3;font-size:9px; }
+.hubble-panel { margin-top:14px;padding:17px 18px; }
+.hubble-controls { display:flex;align-items:center;gap:7px; }
+.hubble-controls .select-wrap { min-height:29px;padding:0 7px;font-size:8px; }
+.hubble-controls .select-wrap select { max-width:132px;font-size:9px; }
+.hubble-message { margin:11px 0 -2px;color:#8c99ab;font-size:9px; }
+.flow-endpoint { white-space:pre-line;font-family:"DM Sans",sans-serif;font-weight:600;color:#50617a;line-height:1.55; }
+.hubble-detail-cell { min-width:220px;max-width:380px;white-space:pre-line;overflow-wrap:anywhere;color:#718097;font-size:9px;line-height:1.55; }
+.flow-verdict { font-size:9px;font-weight:800; }
+.flow-verdict.forwarded { color:#179a73; }
+.flow-verdict.dropped { color:#d65762; }
+.flow-verdict.audited { color:#c28524; }
+.flow-verdict.other { color:#75829a; }
+html[data-theme="dark"] .alerts-link { border-color:#36445b;background:#1a2638;color:#cfdaea; }
+html[data-theme="dark"] .alerts-link:hover { border-color:#53678a;background:#25334a;color:#fff; }
+html[data-theme="dark"] .alert-card { border-color:#54323a;border-left-color:#ff9ca5;background:#2c1d24; }
+html[data-theme="dark"] .alert-card.medium { border-color:#55472b;border-left-color:#f0c36c;background:#30291d; }
+html[data-theme="dark"] .alert-card-header strong { color:#e0e8f4; }
+html[data-theme="dark"] .alert-card-header>span,html[data-theme="dark"] .alert-metrics,html[data-theme="dark"] .alert-reasons,html[data-theme="dark"] .alert-card-footer { color:#aab8cc; }
+html[data-theme="dark"] .alert-card-footer { border-color:#3b2b33; }
+html[data-theme="dark"] .hubble-message { color:#aab8cc; }
+html[data-theme="dark"] .flow-endpoint { color:#dce5f2; }
+html[data-theme="dark"] .hubble-detail-cell { color:#aab8cc; }
+html[data-theme="dark"] .flow-verdict.forwarded { color:#73dfb9; }
+html[data-theme="dark"] .flow-verdict.dropped { color:#ff9ca5; }
+html[data-theme="dark"] .flow-verdict.audited { color:#f0c36c; }
 html[data-theme="dark"] .policy-note { color:#aab8cc; }
 html[data-theme="dark"] .small-action { border-color:#54323a;background:#2c1d24;color:#ff9ca5; }
 html[data-theme="dark"] .small-action:hover { background:#3d252d; }
@@ -123,5 +164,15 @@ html[data-theme="dark"] .small-action.secondary { border-color:#285344;backgroun
 html[data-theme="dark"] .small-action.secondary:hover { background:#20483d; }
 html[data-theme="dark"] .policy-status.blocked { color:#ff9ca5; }
 html[data-theme="dark"] .policy-status.allowed { color:#73dfb9; }
-@media (max-width:700px) { .policy-panel { margin-top:9px;padding:14px 11px; }.policy-actions { gap:4px; }.small-action { padding:0 6px;font-size:8px; } }
+@media (max-width:700px) { .policy-panel,.alert-center,.hubble-panel { margin-top:9px;padding:14px 11px; }.policy-actions { gap:4px; }.small-action { padding:0 6px;font-size:8px; }.alert-list { grid-template-columns:1fr; }.alert-heading-actions { gap:4px; }.alert-heading-actions .text-button { font-size:8px;padding:5px 2px; }.alerts-link { padding:4px 6px; }.hubble-panel .panel-heading { align-items:flex-start;gap:9px;flex-direction:column; }.hubble-controls { width:100%;flex-wrap:wrap; }.hubble-controls .select-wrap { flex:1;min-width:125px;justify-content:space-between; }.hubble-controls .select-wrap select { max-width:100px; } }
 @media (max-width:700px) { .theme-toggle { min-height:28px;padding:0 8px; }.topbar-right .theme-label { display:none; }.guide-top-actions { gap:8px; }.guide-top-actions .theme-label { display:none; } }
+.user-identity { display:grid;gap:2px;min-width:50px;color:#52617a;line-height:1.2; }
+.user-identity strong { max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px; }
+.user-identity small { color:#97a2b1;font-size:8px; }
+.logout-button { min-height:29px;padding:0 9px;border:1px solid #e2e8f1;border-radius:7px;background:#fff;color:#68768b;font-size:9px;font-weight:700;cursor:pointer; }
+.logout-button:hover { border-color:#cbd5f8;color:#536ddd;background:#f7f9ff; }
+html[data-theme="dark"] .user-identity { color:#dce5f2; }
+html[data-theme="dark"] .user-identity small { color:#9baac0; }
+html[data-theme="dark"] .logout-button { border-color:#36445b;background:#1a2638;color:#cfdaea; }
+html[data-theme="dark"] .logout-button:hover { border-color:#53678a;background:#25334a;color:#fff; }
+@media(max-width:700px) { .topbar-right { gap:6px; }.user-identity { min-width:34px; }.user-identity strong { max-width:55px;font-size:8px; }.user-identity small { font-size:7px; }.logout-button { min-height:26px;padding:0 6px;font-size:8px; } }
