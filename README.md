@@ -1,57 +1,31 @@
-# K8s기반 스마트 트래픽 시스템
+# Kubernetes 기반 스마트 트래픽 관리자
 
-K8s 기반의 트래픽 관리 시스템입니다.
+Kubernetes에서 테스트 웹앱으로 들어오는 요청을 기록하고, 트래픽을 분석해 이상 징후를 표시하는 졸업 작품입니다. 관리자는 IP 차단·요청 제한과 알림 확인을 할 수 있습니다. 관리자 대시보드는 로그인으로 보호하고, 조회자에게는 읽기 전용 권한을 제공합니다.
 
+## 주요 기능과 현재 이미지 버전
 
-## 파일 구조 계획
-```bash
-smart-traffic-system/
-│
-├── k8s/                      # Kubernetes 설정 파일 모음
-│   ├── namespace.yaml
-│   │
-│   ├── ingress/
-│   │   └── ingress.yaml
-│   │
-│   ├── app/                  # 테스트용 서비스 (트래픽 발생용)
-│   │   ├── deployment.yaml
-│   │   └── service.yaml
-│   │
-│   ├── analyzer/             # 트래픽 분석 서버 (FastAPI)
-│   │   ├── deployment.yaml
-│   │   └── service.yaml
-│   │
-│   ├── monitoring/           # 모니터링 스택
-│   │   ├── prometheus.yaml
-│   │   └── values.yaml
-│   │
-│   ├── security/             # 차단 정책
-│   │   └── network-policy.yaml
-│   │
-│   └── configmap/            # 설정값
-│       └── app-config.yaml
-│
-├── analyzer/                 # Python 분석 서버 코드
-│   ├── main.py
-│   ├── detector.py           # 이상 탐지 로직
-│   ├── blocker.py            # k8s 차단 API 호출
-│   ├── requirements.txt
-│   └── Dockerfile
-│
-├── app/                      # 테스트용 웹 서버
-│   ├── app.py
-│   ├── requirements.txt
-│   └── Dockerfile
-│
-├── scripts/                  # 테스트 및 자동화
-│   ├── load_test.js          # k6 스크립트
-│   └── deploy.sh
-│
-├── docs/                     # 발표용 자료
-│   ├── architecture.png
-│   └── flowchart.md
-│
-└── README.md
+- 테스트 웹앱이 요청 정보를 PostgreSQL에 기록하며, 데이터는 PVC에 보관합니다.
+- Analyzer가 규칙 기반 탐지와 Isolation Forest로 최근 트래픽을 분석하고 결과와 이상 알림을 저장합니다.
+- 관리자 대시보드에서 요청 추이, 분석 기록, IP 정책, 알림을 확인합니다.
+- 격리된 Cilium 검증 클러스터의 Hubble 흐름과 허용·차단 판정을 대시보드에서 확인할 수 있습니다.
+- Prometheus와 Grafana로 앱 메트릭과 Kubernetes 자원 사용량을 모니터링합니다.
+- 현재 배포 이미지: `antiwater19/test-web-app:v9`, `antiwater19/traffic-analyzer:v22`.
+
+## 프로젝트 구조
+
+```text
+app-testing/                 테스트 웹앱, DB 로깅, 웹 화면
+analyzer/                    FastAPI 분석 API, 탐지기, 관리자 대시보드
+k6/test.js                   정상·이상 트래픽 시나리오
+k8s/app/                     테스트 웹앱과 PostgreSQL
+k8s/analyzer/                Analyzer 배포, 서비스, RBAC
+k8s/ebpf-validation/         격리 Cilium/Hubble 검증용 매니페스트
+k8s/k6/                      k6 Job 구성
+k8s/monitoring/              Prometheus ServiceMonitor와 Grafana 대시보드
+k8s/security/                네트워크 정책
+scripts/setup-analyzer-auth.ps1  로컬 Kubernetes Secret 생성
+GuideBook/                   평가 기록과 프로젝트 설명 자료
+README.md                    설치·실행 안내
 ```
 
 ## app-testing의 docker image 만들기 
@@ -85,8 +59,9 @@ nginx ingress controller 설치 되어야 ingress가 제대로 동작합니다.
 ---
 
 ### 본격적으로 차례로 배포하기
-```bash
+```powershell
 # 위에서 부터 차례로 명령어 치면 됩니다.
+kubectl config use-context docker-desktop
 kubectl apply -f k8s/namespace.yaml
 # 트래픽 기록 저장용 PostgreSQL과 영구 볼륨
 kubectl apply -f k8s/app/database.yaml
@@ -105,6 +80,7 @@ kubectl apply -f k8s/ingress/ingress.yaml
 kubectl apply -f k8s/security/network-policy.yaml
 
 # analyzer 서비스 배포
+# admin/viewer 비밀번호와 세션·내부 API 토큰을 생성합니다. 표시된 비밀번호를 저장하세요.
 .\scripts\setup-analyzer-auth.ps1
 kubectl apply -f k8s/analyzer/rbac.yaml
 kubectl apply -f k8s/analyzer/deployment.yaml
@@ -148,8 +124,16 @@ docker push antiwater19/traffic-analyzer:v22
 kubectl apply -f k8s/app/deployment.yaml
 kubectl apply -f k8s/analyzer/deployment.yaml
 kubectl apply -f k8s/monitoring/prometheus.yaml
+kubectl apply -f k8s/security/monitoring-network-policy.yaml
 kubectl rollout status deployment/test-web-app -n smart-traffic
 kubectl rollout status deployment/traffic-analyzer -n smart-traffic
+```
+
+Hubble 대시보드도 사용 중이면 새 Analyzer 이미지를 빌드·push한 뒤 Cilium 검증 클러스터의 Deployment도 갱신합니다.
+
+```powershell
+kubectl --context kind-cilium-validation apply -f k8s/ebpf-validation/analyzer-deployment.yaml
+kubectl --context kind-cilium-validation rollout status deployment/traffic-analyzer -n smart-traffic
 ```
 
 Grafana와 Prometheus는 Ingress로 외부에 공개하지 않고 로컬 포트포워딩으로 접속합니다.
@@ -182,7 +166,7 @@ kubectl logs -n smart-traffic -l app=test-web-app --prefix=true
 analyzer는 PostgreSQL에서 요청 로그를 직접 조회해 기본 60초 구간을 집계합니다.
 분석은 `analysis_results` 테이블에 저장되며, 구간별 지표, IP별 요약, 탐지 사유를 포함합니다.
 응답의 `detector_metadata.rule_findings`, `isolation_forest_findings`, `combined_findings`는 각 방식별 탐지 클라이언트 수를 나타냅니다. `findings[]`의 `detection_sources`와 `rule_reasons`로 IP별 탐지 출처와 규칙 근거도 확인할 수 있습니다.
-```bash
+```powershell
 kubectl port-forward -n smart-traffic svc/traffic-analyzer-service 9000:9000
 ```
 Analyzer API는 로그인 쿠키가 필요합니다. 아래처럼 관리자 로그인을 한 뒤 같은 PowerShell 세션에서 API를 호출합니다.
@@ -253,7 +237,7 @@ kubectl --context kind-cilium-validation apply -f k8s/ebpf-validation/traffic.ya
 kubectl --context kind-cilium-validation apply -f k8s/ebpf-validation/hubble-verdict-demo.yaml
 kubectl --context kind-cilium-validation rollout status deployment/flow-denied-client -n hubble-validation
 
-# 앞 절의 인증 Secret 설정을 한 번 마친 다음 Analyzer v22를 배포
+# [관리자 로그인과 권한](#관리자-로그인과-권한) 절의 인증 Secret 설정을 먼저 완료해야 합니다.
 kubectl --context kind-cilium-validation apply -f k8s/analyzer/rbac.yaml
 kubectl --context kind-cilium-validation apply -f k8s/ebpf-validation/analyzer-deployment.yaml
 kubectl --context kind-cilium-validation apply -f k8s/analyzer/service.yaml
@@ -336,9 +320,11 @@ kubectl port-forward -n smart-traffic svc/traffic-analyzer-service 9000:9000
 대시보드를 닫을 때는 포트포워딩 중인 터미널에서 `Ctrl+C`를 누르세요.
 
 ### 관리자 로그인과 권한
-대시보드와 Analyzer API는 로그인이 필요합니다. 관리자 계정은 분석 실행, IP 차단·해제, 요청 제한 변경, 알림 확인을 할 수 있습니다. 조회자 계정은 트래픽 요약, 분석 기록, 이상 알림과 Hubble 흐름만 볼 수 있습니다. 조회자 권한은 UI 버튼뿐 아니라 서버 API에서도 확인합니다. 로그인 세션은 8시간 유지되고, 같은 클라이언트에서 로그인에 5회 실패하면 5분간 재시도를 막습니다.
+대시보드에 접속하면 로그인 화면으로 이동합니다. 기본 사용자 이름은 `admin`과 `viewer`이며, 비밀번호는 Secret 생성 스크립트가 실행될 때 출력한 값을 사용합니다. 같은 Secret을 두 클러스터에 만들었으면 `9000`과 `9001` 포트의 계정 정보가 같습니다.
 
-Kubernetes Secret은 저장소에 비밀번호를 기록하지 않도록 PowerShell 스크립트에서 임의 생성합니다. 이 스크립트는 `docker-desktop`과 `kind-cilium-validation`의 `smart-traffic` namespace에 관리자·조회자 계정과 내부 API 토큰을 설정하고, `docker-desktop`에는 Prometheus 메트릭 토큰도 설정합니다. 스크립트를 실행하면 계정 비밀번호가 한 번 표시되므로 안전한 곳에 저장하세요. 다시 실행하면 계정/토큰이 교체됩니다.
+관리자 계정은 분석 실행, IP 차단·해제, 요청 제한 변경, 알림 확인을 할 수 있습니다. 조회자 계정은 트래픽 요약, 분석 기록, 이상 알림과 Hubble 흐름만 볼 수 있습니다. 권한은 화면뿐 아니라 서버 API에서도 적용합니다. 로그인 세션은 8시간 유지되고, 같은 클라이언트에서 로그인에 5회 실패하면 5분간 재시도를 막습니다.
+
+Kubernetes Secret은 저장소에 비밀번호를 기록하지 않도록 PowerShell 스크립트에서 임의 생성합니다. 기본 설정은 `docker-desktop`과 `kind-cilium-validation`의 `smart-traffic` namespace에 계정과 내부 API 토큰을 만들고, `docker-desktop`의 `monitoring` namespace에 Prometheus 메트릭 토큰을 만듭니다. 스크립트가 출력하는 관리자·조회자 비밀번호는 다시 표시되지 않으므로 안전한 곳에 보관하세요. 스크립트를 다시 실행하면 계정과 토큰이 교체됩니다. 이미 실행 중인 Analyzer도 새 Secret을 읽도록 각 클러스터에서 Deployment를 재시작해야 합니다.
 
 ```powershell
 .\scripts\setup-analyzer-auth.ps1
